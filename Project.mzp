@@ -1,0 +1,24 @@
+{
+    "version": 105,
+    "projectFiles": [
+        "airport_sched.mzn",
+        "data/hackathon_01.json",
+        "data/hackathon_02.json",
+        "data/hackathon_03.json",
+        "data/hackathon_04.json",
+        "data/hackathon_05.json",
+        "data/hackathon_06.json",
+        "data/hackathon_07.json",
+        "data/hackathon_08.json",
+        "data/hackathon_09.json",
+        "data/hackathon_10.json",
+        "data/hackathon_11.json",
+        "data/hackathon_12.json",
+    ],
+    "openFiles": [
+        "airport_sched.mzn"
+    ],
+    "openTab": 0,
+    "selectedBuiltinConfigId": "org.gecode.gecode",
+    "selectedBuiltinConfigVersion": "default"
+}

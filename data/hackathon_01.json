@@ -1,0 +1,573 @@
+{
+    "horizon": 280,
+    "FlightID": [
+        "F000",
+        "F001",
+        "F002",
+        "F003"
+    ],
+    "GateID": [
+        "G000",
+        "G001",
+        "G002",
+        "G003"
+    ],
+    "LaborID": [
+        "baggage_team_01",
+        "baggage_team_02",
+        "baggage_team_03",
+        "baggage_team_04",
+        "baggage_team_05",
+        "baggage_team_06",
+        "baggage_team_07",
+        "baggage_team_08",
+        "baggage_team_09",
+        "baggage_team_10",
+        "baggage_team_11",
+        "baggage_team_12",
+        "baggage_team_13",
+        "cabin_clean_team_01",
+        "cabin_clean_team_02",
+        "cabin_clean_team_03",
+        "cabin_clean_team_04",
+        "cabin_clean_team_05",
+        "cabin_clean_team_06",
+        "cabin_clean_team_07",
+        "cabin_clean_team_08",
+        "catering_team_01",
+        "catering_team_02",
+        "catering_team_03",
+        "catering_team_04",
+        "catering_team_05",
+        "catering_team_06",
+        "catering_team_07",
+        "catering_team_08",
+        "fuel_team_01",
+        "fuel_team_02",
+        "fuel_team_03",
+        "fuel_team_04",
+        "fuel_team_05",
+        "fuel_team_06",
+        "fuel_team_07",
+        "fuel_team_08",
+        "pushback_team_01",
+        "pushback_team_02",
+        "pushback_team_03",
+        "pushback_team_04",
+        "ramp_team_01",
+        "ramp_team_02",
+        "ramp_team_03",
+        "ramp_team_04",
+        "ramp_team_05",
+        "ramp_team_06",
+        "ramp_team_07",
+        "ramp_team_08",
+        "ramp_team_09",
+        "ramp_team_10",
+        "water_waste_team_01",
+        "water_waste_team_02",
+        "water_waste_team_03",
+        "water_waste_team_04",
+        "water_waste_team_05",
+        "water_waste_team_06"
+    ],
+    "max_tasks": 10,
+    "flight_arr": [
+        194,
+        220,
+        142,
+        201
+    ],
+    "flight_dep": [
+        246,
+        276,
+        193,
+        257
+    ],
+    "flight_carrier": [
+        "domestic",
+        "domestic",
+        "domestic",
+        "domestic"
+    ],
+    "flight_size": [
+        "narrow",
+        "narrow",
+        "narrow",
+        "narrow"
+    ],
+    "flight_op_type": [
+        "passenger",
+        "passenger",
+        "passenger",
+        "passenger"
+    ],
+    "flight_n_tasks": [
+        10,
+        10,
+        10,
+        10
+    ],
+    "flight_tasks": [
+        [
+            {
+                "kind": "ARRIVE_SECURE",
+                "duration": 2
+            },
+            {
+                "kind": "DISEMBARK",
+                "duration": 7
+            },
+            {
+                "kind": "BAG_UNLOAD",
+                "duration": 11
+            },
+            {
+                "kind": "FUEL",
+                "duration": 15
+            },
+            {
+                "kind": "CABIN_CLEAN",
+                "duration": 16
+            },
+            {
+                "kind": "WATER_LAV",
+                "duration": 7
+            },
+            {
+                "kind": "CATERING",
+                "duration": 15
+            },
+            {
+                "kind": "BAG_LOAD",
+                "duration": 11
+            },
+            {
+                "kind": "BOARDING",
+                "duration": 17
+            },
+            {
+                "kind": "PUSHBACK",
+                "duration": 4
+            }
+        ],
+        [
+            {
+                "kind": "ARRIVE_SECURE",
+                "duration": 2
+            },
+            {
+                "kind": "DISEMBARK",
+                "duration": 9
+            },
+            {
+                "kind": "BAG_UNLOAD",
+                "duration": 17
+            },
+            {
+                "kind": "FUEL",
+                "duration": 14
+            },
+            {
+                "kind": "CABIN_CLEAN",
+                "duration": 15
+            },
+            {
+                "kind": "WATER_LAV",
+                "duration": 6
+            },
+            {
+                "kind": "CATERING",
+                "duration": 15
+            },
+            {
+                "kind": "BAG_LOAD",
+                "duration": 10
+            },
+            {
+                "kind": "BOARDING",
+                "duration": 17
+            },
+            {
+                "kind": "PUSHBACK",
+                "duration": 7
+            }
+        ],
+        [
+            {
+                "kind": "ARRIVE_SECURE",
+                "duration": 3
+            },
+            {
+                "kind": "DISEMBARK",
+                "duration": 10
+            },
+            {
+                "kind": "BAG_UNLOAD",
+                "duration": 12
+            },
+            {
+                "kind": "FUEL",
+                "duration": 11
+            },
+            {
+                "kind": "CABIN_CLEAN",
+                "duration": 14
+            },
+            {
+                "kind": "WATER_LAV",
+                "duration": 7
+            },
+            {
+                "kind": "CATERING",
+                "duration": 12
+            },
+            {
+                "kind": "BAG_LOAD",
+                "duration": 14
+            },
+            {
+                "kind": "BOARDING",
+                "duration": 13
+            },
+            {
+                "kind": "PUSHBACK",
+                "duration": 5
+            }
+        ],
+        [
+            {
+                "kind": "ARRIVE_SECURE",
+                "duration": 2
+            },
+            {
+                "kind": "DISEMBARK",
+                "duration": 9
+            },
+            {
+                "kind": "BAG_UNLOAD",
+                "duration": 12
+            },
+            {
+                "kind": "FUEL",
+                "duration": 17
+            },
+            {
+                "kind": "CABIN_CLEAN",
+                "duration": 16
+            },
+            {
+                "kind": "WATER_LAV",
+                "duration": 5
+            },
+            {
+                "kind": "CATERING",
+                "duration": 16
+            },
+            {
+                "kind": "BAG_LOAD",
+                "duration": 13
+            },
+            {
+                "kind": "BOARDING",
+                "duration": 16
+            },
+            {
+                "kind": "PUSHBACK",
+                "duration": 6
+            }
+        ]
+    ],
+    "gate_stand_size": [
+        "small",
+        "small",
+        "small",
+        "small"
+    ],
+    "gate_usage": [
+        "domestic",
+        "domestic",
+        "domestic",
+        "domestic"
+    ],
+    "gate_op_type": [
+        "passenger",
+        "passenger",
+        "passenger",
+        "passenger"
+    ],
+    "gate_open": [
+        0,
+        0,
+        0,
+        0
+    ],
+    "gate_close": [
+        280,
+        280,
+        280,
+        280
+    ],
+    "labor_kind": [
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "baggage_team",
+        "cabin_clean_team",
+        "cabin_clean_team",
+        "cabin_clean_team",
+        "cabin_clean_team",
+        "cabin_clean_team",
+        "cabin_clean_team",
+        "cabin_clean_team",
+        "cabin_clean_team",
+        "catering_team",
+        "catering_team",
+        "catering_team",
+        "catering_team",
+        "catering_team",
+        "catering_team",
+        "catering_team",
+        "catering_team",
+        "fuel_team",
+        "fuel_team",
+        "fuel_team",
+        "fuel_team",
+        "fuel_team",
+        "fuel_team",
+        "fuel_team",
+        "fuel_team",
+        "pushback_team",
+        "pushback_team",
+        "pushback_team",
+        "pushback_team",
+        "ramp_team",
+        "ramp_team",
+        "ramp_team",
+        "ramp_team",
+        "ramp_team",
+        "ramp_team",
+        "ramp_team",
+        "ramp_team",
+        "ramp_team",
+        "ramp_team",
+        "water_waste_team",
+        "water_waste_team",
+        "water_waste_team",
+        "water_waste_team",
+        "water_waste_team",
+        "water_waste_team"
+    ],
+    "labor_cost": [
+        252,
+        252,
+        252,
+        219,
+        219,
+        219,
+        219,
+        219,
+        268,
+        268,
+        268,
+        268,
+        268,
+        252,
+        252,
+        219,
+        219,
+        219,
+        268,
+        268,
+        268,
+        258,
+        258,
+        224,
+        224,
+        224,
+        274,
+        274,
+        274,
+        276,
+        276,
+        240,
+        240,
+        240,
+        294,
+        294,
+        294,
+        230,
+        230,
+        282,
+        282,
+        253,
+        253,
+        220,
+        220,
+        220,
+        220,
+        270,
+        270,
+        270,
+        270,
+        253,
+        253,
+        220,
+        220,
+        270,
+        270
+    ],
+    "labor_shift_start": [
+        0,
+        0,
+        0,
+        90,
+        90,
+        90,
+        90,
+        90,
+        180,
+        180,
+        180,
+        180,
+        180,
+        0,
+        0,
+        90,
+        90,
+        90,
+        180,
+        180,
+        180,
+        0,
+        0,
+        90,
+        90,
+        90,
+        180,
+        180,
+        180,
+        0,
+        0,
+        90,
+        90,
+        90,
+        180,
+        180,
+        180,
+        90,
+        90,
+        180,
+        180,
+        0,
+        0,
+        90,
+        90,
+        90,
+        90,
+        180,
+        180,
+        180,
+        180,
+        0,
+        0,
+        90,
+        90,
+        180,
+        180
+    ],
+    "labor_shift_end": [
+        180,
+        180,
+        180,
+        270,
+        270,
+        270,
+        270,
+        270,
+        360,
+        360,
+        360,
+        360,
+        360,
+        180,
+        180,
+        270,
+        270,
+        270,
+        360,
+        360,
+        360,
+        180,
+        180,
+        270,
+        270,
+        270,
+        360,
+        360,
+        360,
+        180,
+        180,
+        270,
+        270,
+        270,
+        360,
+        360,
+        360,
+        270,
+        270,
+        360,
+        360,
+        180,
+        180,
+        270,
+        270,
+        270,
+        270,
+        360,
+        360,
+        360,
+        360,
+        180,
+        180,
+        270,
+        270,
+        360,
+        360
+    ],
+    "travel": [
+        [
+            0,
+            1,
+            2,
+            3
+        ],
+        [
+            1,
+            0,
+            1,
+            2
+        ],
+        [
+            2,
+            1,
+            0,
+            1
+        ],
+        [
+            3,
+            2,
+            1,
+            0
+        ]
+    ]
+}
