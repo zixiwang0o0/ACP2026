@@ -1,0 +1,7 @@
+﻿{
+  "gate":       ["G003", "G002", "G001", "G000"],
+  "task_start": [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+  "task_labor": [["baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01"], ["baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01"], ["baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01"], ["baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01", "baggage_team_01"]],
+  "cost":       -2147483646
+}
+

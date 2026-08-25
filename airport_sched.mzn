@@ -123,12 +123,31 @@ constraint forall(f in FlightID)(
   flight_dep[f] <= gate_close[gate[f]]
 );
 
-
-
 %   C2 a wide-body flight must be at a large stand;
+
+constraint forall(f in FlightID)(
+  flight_size[f] = wide -> gate_stand_size[gate[f]] = large
+);
+
 %   C3 the gate's op_type matches the flight's op_type;
+
+constraint forall(f in FlightID)(
+  gate_op_type[gate[f]] = flight_op_type[f]
+);
+
 %   C4 the gate's usage matches the flight's carrier;
+
+constraint forall(f in FlightID)(
+  gate_usage[gate[f]] = flight_carrier[f]
+);
+
 %   C5 two flights sharing a gate need a >= 30-min gap (dep_i + 30 <= arr_j).
+
+constraint forall(f1, f2 in FlightID where f1 < f2)(
+  gate[f1] = gate[f2] ->
+  (flight_dep[f1] + min_gate_gap <= flight_arr[f2] \/
+   flight_dep[f2] + min_gate_gap <= flight_arr[f1])
+);
 
 % Tier 2 (crew scheduling, C6-C10): TODO
 %   C6 the team assigned to a task is of kind required_team[flight_tasks[f,t].kind];
