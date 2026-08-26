@@ -1,7 +1,8 @@
 {
   "gate":       ["G000", "G001", "G002", "G003"],
-  "task_start": [[200, 202, 220, 210, 209, 218, 210, 231, 225, 242], [226, 228, 242, 238, 237, 246, 237, 259, 252, 269], [148, 151, 162, 164, 161, 168, 163, 174, 175, 188], [207, 209, 226, 218, 219, 230, 219, 238, 235, 251]],
-  "task_labor": [["ramp_team_10", "ramp_team_10", "baggage_team_12", "fuel_team_07", "cabin_clean_team_03", "water_waste_team_03", "catering_team_04", "baggage_team_13", "ramp_team_07", "pushback_team_04"], ["ramp_team_06", "ramp_team_10", "baggage_team_08", "fuel_team_07", "cabin_clean_team_08", "water_waste_team_05", "catering_team_08", "baggage_team_10", "ramp_team_09", "pushback_team_03"], ["ramp_team_04", "ramp_team_01", "baggage_team_05", "fuel_team_01", "cabin_clean_team_01", "water_waste_team_04", "catering_team_01", "baggage_team_04", "ramp_team_03", "pushback_team_02"], ["ramp_team_08", "ramp_team_07", "baggage_team_06", "fuel_team_08", "cabin_clean_team_08", "water_waste_team_06", "catering_team_08", "baggage_team_09", "ramp_team_05", "pushback_team_03"]],
-  "cost":       8294
+  "task_start": [[194, 196, 196, 203, 203, 203, 203, 207, 219, 236], [220, 222, 222, 235, 235, 231, 234, 239, 250, 267], [142, 145, 145, 155, 155, 155, 155, 157, 169, 182], [201, 203, 203, 218, 219, 212, 218, 215, 235, 251]],
+  "task_labor": [["ramp_team_03", "ramp_team_03", "baggage_team_04", "fuel_team_03", "cabin_clean_team_03", "water_waste_team_03", "catering_team_03", "baggage_team_04", "ramp_team_03", "pushback_team_03"], ["ramp_team_04", "ramp_team_04", "baggage_team_04", "fuel_team_03", "cabin_clean_team_03", "water_waste_team_03", "catering_team_03", "baggage_team_04", "ramp_team_03", "pushback_team_03"], ["ramp_team_03", "ramp_team_03", "baggage_team_04", "fuel_team_03", "cabin_clean_team_03", "water_waste_team_03", "catering_team_03", "baggage_team_04", "ramp_team_03", "pushback_team_03"], ["ramp_team_04", "ramp_team_03", "baggage_team_05", "fuel_team_03", "cabin_clean_team_03", "water_waste_team_03", "catering_team_03", "baggage_team_05", "ramp_team_04", "pushback_team_03"]],
+  "cost":       2063
 }
+ 
  

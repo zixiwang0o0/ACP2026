@@ -115,44 +115,45 @@ array[FlightID, TASK_IDX] of var 0..horizon: task_start;
 array[FlightID, TASK_IDX] of var LaborID: task_labor;
 
 % ---- Constraints ----  (add yours here; see hackathon.pdf for the full text)
-% Tier 1 (gate feasibility, C1-C5): TODO
-%   C1 each flight's [flight_arr, flight_dep] fits inside its gate's [open, close];
+% Tier 1: precompute gates satisfying C1-C4 to shrink gate domains.
+array[FlightID] of set of GateID: compatible_gates = [
+  { g | g in GateID where
+      gate_open[g] <= flight_arr[f] /\
+      flight_dep[f] <= gate_close[g] /\
+      (flight_size[f] = narrow \/ gate_stand_size[g] = large) /\
+      gate_op_type[g] = flight_op_type[f] /\
+      gate_usage[g] = flight_carrier[f]
+  }
+  | f in FlightID
+];
+constraint forall(f in FlightID)(gate[f] in compatible_gates[f]);
 
-constraint forall(f in FlightID)(
-  gate_open[gate[f]] <= flight_arr[f] /\
-  flight_dep[f] <= gate_close[gate[f]]
-);
-
-%   C2 a wide-body flight must be at a large stand;
-
-constraint forall(f in FlightID)(
-  flight_size[f] = wide -> gate_stand_size[gate[f]] = large
-);
-
-%   C3 the gate's op_type matches the flight's op_type;
-
-constraint forall(f in FlightID)(
-  gate_op_type[gate[f]] = flight_op_type[f]
-);
-
-%   C4 the gate's usage matches the flight's carrier;
-
-constraint forall(f in FlightID)(
-  gate_usage[gate[f]] = flight_carrier[f]
-);
-
-%   C5 two flights sharing a gate need a >= 30-min gap (dep_i + 30 <= arr_j).
-
-constraint forall(f1, f2 in FlightID where f1 < f2)(
-  gate[f1] = gate[f2] ->
-  (flight_dep[f1] + min_gate_gap <= flight_arr[f2] \/
-   flight_dep[f2] + min_gate_gap <= flight_arr[f1])
+% C5: only statically conflicting flight pairs need a constraint.
+constraint forall(f1, f2 in FlightID where
+  f1 < f2 /\
+  flight_dep[f1] + min_gate_gap > flight_arr[f2] /\
+  flight_dep[f2] + min_gate_gap > flight_arr[f1]
+)(
+  gate[f1] != gate[f2]
 );
 
 % Tier 2 (crew scheduling, C6-C10): TODO
 %   C6 the team assigned to a task is of kind required_team[flight_tasks[f,t].kind];
+array[FlightID, TASK_IDX] of set of LaborID: compatible_labor =
+  array2d(FlightID, TASK_IDX, [
+    if active(f, t) then
+      { l | l in LaborID where
+          labor_kind[l] = required_team[flight_tasks[f, t].kind] /\
+          max(flight_arr[f], labor_shift_start[l]) + flight_tasks[f, t].duration
+            <= min(flight_dep[f], labor_shift_end[l])
+      }
+    else
+      { min(LaborID) }
+    endif
+    | f in FlightID, t in TASK_IDX
+  ]);
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
-  labor_kind[task_labor[f, t]] = required_team[flight_tasks[f, t].kind]
+  task_labor[f, t] in compatible_labor[f, t]
 );
 
 %   C7 each task runs inside its flight's [flight_arr, flight_dep] window;
@@ -176,7 +177,8 @@ constraint forall(f1, f2 in FlightID, t1, t2 in TASK_IDX where
   flight_arr[f1] < flight_dep[f2] /\
   flight_arr[f2] < flight_dep[f1] /\
   required_team[flight_tasks[f1, t1].kind] =
-    required_team[flight_tasks[f2, t2].kind]
+    required_team[flight_tasks[f2, t2].kind] /\
+  compatible_labor[f1, t1] intersect compatible_labor[f2, t2] != {}
 )(
   task_labor[f1, t1] = task_labor[f2, t2] ->
     (task_start[f1, t1] + flight_tasks[f1, t1].duration <= task_start[f2, t2] \/
@@ -188,6 +190,26 @@ constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
   labor_shift_start[task_labor[f, t]] <= task_start[f, t] /\
   task_start[f, t] + flight_tasks[f, t].duration
     <= labor_shift_end[task_labor[f, t]]
+);
+
+% Eliminate permutations among teams with identical kind, shift and cost.
+constraint forall(rep in LaborID where
+  rep = min({ l | l in LaborID where
+    labor_kind[l] = labor_kind[rep] /\
+    labor_cost[l] = labor_cost[rep] /\
+    labor_shift_start[l] = labor_shift_start[rep] /\
+    labor_shift_end[l] = labor_shift_end[rep]
+  })
+)(
+  value_precede_chain(
+    [l | l in LaborID where
+      labor_kind[l] = labor_kind[rep] /\
+      labor_cost[l] = labor_cost[rep] /\
+      labor_shift_start[l] = labor_shift_start[rep] /\
+      labor_shift_end[l] = labor_shift_end[rep]
+    ],
+    [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)]
+  )
 );
 
 % Tier 3 (routing + rest, C11-C12): TODO
@@ -203,14 +225,26 @@ constraint forall(f in FlightID, t in TASK_IDX where not active(f, t))(
 array[LaborID] of var bool: used;
 var int: cost;
 constraint forall(l in LaborID)(
-  used[l] <-> exists(f in FlightID, t in TASK_IDX where active(f, t))(
+  used[l] <-> exists(f in FlightID, t in TASK_IDX where
+    active(f, t) /\ l in compatible_labor[f, t]
+  )(
     task_labor[f, t] = l
   )
 );
 constraint cost = sum(l in LaborID)(
   labor_cost[l] * bool2int(used[l])
 );
-solve minimize cost;
+solve :: seq_search([
+  int_search(
+    [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+    smallest, indomain_min, complete
+  ),
+  int_search(
+    [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+    first_fail, indomain_min, complete
+  ),
+  int_search([gate[f] | f in FlightID], first_fail, indomain_min, complete)
+]) minimize cost;
 
 % ---- Output (do not modify) ----
 function string: row_gate() =
