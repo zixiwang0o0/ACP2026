@@ -149,37 +149,56 @@ constraint forall(f1, f2 in FlightID where f1 < f2)(
    flight_dep[f2] + min_gate_gap <= flight_arr[f1])
 );
 
-% Tier 2 (crew scheduling, C6-C10): TODO
-%   C6 the team assigned to a task is of kind required_team[flight_tasks[f,t].kind];
+% Tier 2 (crew scheduling, C6-C10).
+array[FlightID, TASK_IDX] of set of LaborID: compatible_labor =
+  array2d(FlightID, TASK_IDX, [
+    if active(f, t) then
+      { l | l in LaborID where
+          labor_kind[l] = required_team[flight_tasks[f, t].kind] /\
+          max(flight_arr[f], labor_shift_start[l]) + flight_tasks[f, t].duration
+            <= min(flight_dep[f], labor_shift_end[l])
+      }
+    else
+      { min(LaborID) }
+    endif
+    | f in FlightID, t in TASK_IDX
+  ]);
+
+% C6: the assigned team has the required kind.
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
-  labor_kind[task_labor[f, t]] = required_team[flight_tasks[f, t].kind]
+  task_labor[f, t] in compatible_labor[f, t]
 );
 
-%   C7 each task runs inside its flight's [flight_arr, flight_dep] window;
+% C7: each task runs inside its flight window.
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
-  flight_arr[f] <= task_start[f, t] /\
+  task_start[f, t] >= flight_arr[f] /\
   task_start[f, t] + flight_tasks[f, t].duration <= flight_dep[f]
 );
-%   C8 precedence: a task starts only once all its required_preds finished;
-constraint forall(f in FlightID, pred, succ in TASK_IDX where
-  active(f, pred) /\ active(f, succ) /\
-  flight_tasks[f, pred].kind in required_preds[flight_tasks[f, succ].kind]
+% C8: every present predecessor finishes before its successor starts.
+constraint forall(f in FlightID, pred_t, succ_t in TASK_IDX where
+  active(f, pred_t) /\ active(f, succ_t) /\
+  flight_tasks[f, pred_t].kind in required_preds[flight_tasks[f, succ_t].kind]
 )(
-  task_start[f, pred] + flight_tasks[f, pred].duration <= task_start[f, succ]
+  task_start[f, pred_t] + flight_tasks[f, pred_t].duration
+    <= task_start[f, succ_t]
 );
-%   C9 no team is booked on two time-overlapping tasks;
-constraint cumulatives(
-  [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
-  [flight_tasks[f, t].duration | f in FlightID, t in TASK_IDX where active(f, t)],
-  [1 | f in FlightID, t in TASK_IDX where active(f, t)],
-  [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
-  [1 | l in LaborID],
-  true
+% C9: tasks assigned to one team cannot overlap.
+constraint forall(f1, f2 in FlightID, t1, t2 in TASK_IDX where
+  active(f1, t1) /\ active(f2, t2) /\
+  (f1 < f2 \/ (f1 = f2 /\ t1 < t2)) /\
+  required_team[flight_tasks[f1, t1].kind] =
+    required_team[flight_tasks[f2, t2].kind] /\
+  compatible_labor[f1, t1] intersect compatible_labor[f2, t2] != {}
+)(
+  task_labor[f1, t1] = task_labor[f2, t2] ->
+    (task_start[f1, t1] + flight_tasks[f1, t1].duration <= task_start[f2, t2] \/
+     task_start[f2, t2] + flight_tasks[f2, t2].duration <= task_start[f1, t1])
 );
-%   C10 each team works only inside [labor_shift_start, labor_shift_end].
+% C10: each task lies wholly inside its team's shift.
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
-  labor_shift_start[task_labor[f, t]] <= task_start[f, t] /\
-  task_start[f, t] + flight_tasks[f, t].duration <= labor_shift_end[task_labor[f, t]]
+  task_start[f, t] >= labor_shift_start[task_labor[f, t]] /\
+  task_start[f, t] + flight_tasks[f, t].duration
+    <= labor_shift_end[task_labor[f, t]]
 );
 
 % Tier 3 (routing + rest, C11-C12): TODO
@@ -191,10 +210,27 @@ constraint forall(f in FlightID, t in TASK_IDX where not active(f, t))(
   task_start[f, t] = 0 /\ task_labor[f, t] = min(LaborID)
 );
 
-% ---- Objective: minimise the cost of the DISTINCT teams used: TODO ----
+% ---- Objective: minimise the cost of distinct teams used ----
 array[LaborID] of var bool: used;
 var int: cost;
-solve minimize cost;
+constraint forall(l in LaborID)(
+  used[l] <-> exists(f in FlightID, t in TASK_IDX where active(f, t))(
+    task_labor[f, t] = l
+  )
+);
+constraint cost = sum(l in LaborID)(labor_cost[l] * bool2int(used[l]));
+
+solve :: seq_search([
+  int_search(
+    [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+    smallest, indomain_min, complete
+  ),
+  int_search(
+    [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+    first_fail, indomain_min, complete
+  ),
+  int_search([gate[f] | f in FlightID], first_fail, indomain_min, complete)
+]) minimize cost;
 
 % ---- Output (do not modify) ----
 function string: row_gate() =
