@@ -1,7 +1,7 @@
 {
-  "gate":       ["G002", "G000", "G001", "G003"],
-  "task_start": [[194, 196, 216, 203, 203, 213, 204, 227, 225, 242], [224, 226, 240, 237, 237, 238, 237, 257, 252, 269], [143, 146, 155, 159, 156, 163, 158, 168, 170, 188], [202, 209, 204, 218, 219, 230, 219, 238, 235, 251]],
-  "task_labor": [["ramp_team_06", "ramp_team_05", "baggage_team_05", "fuel_team_05", "cabin_clean_team_03", "water_waste_team_05", "catering_team_04", "baggage_team_05", "ramp_team_06", "pushback_team_03"], ["ramp_team_05", "ramp_team_05", "baggage_team_08", "fuel_team_05", "cabin_clean_team_03", "water_waste_team_05", "catering_team_04", "baggage_team_08", "ramp_team_06", "pushback_team_03"], ["ramp_team_06", "ramp_team_06", "baggage_team_08", "fuel_team_05", "cabin_clean_team_02", "water_waste_team_03", "catering_team_04", "baggage_team_08", "ramp_team_05", "pushback_team_03"], ["ramp_team_06", "ramp_team_06", "baggage_team_05", "fuel_team_05", "cabin_clean_team_03", "water_waste_team_03", "catering_team_04", "baggage_team_05", "ramp_team_05", "pushback_team_03"]],
-  "cost":       2585
+  "gate":       ["G000", "G001", "G002", "G003"],
+  "task_start": [[200, 202, 220, 210, 209, 218, 210, 231, 225, 242], [226, 228, 242, 238, 237, 246, 237, 259, 252, 269], [148, 151, 162, 164, 161, 168, 163, 174, 175, 188], [207, 209, 226, 218, 219, 230, 219, 238, 235, 251]],
+  "task_labor": [["ramp_team_10", "ramp_team_10", "baggage_team_12", "fuel_team_07", "cabin_clean_team_03", "water_waste_team_03", "catering_team_04", "baggage_team_13", "ramp_team_07", "pushback_team_04"], ["ramp_team_06", "ramp_team_10", "baggage_team_08", "fuel_team_07", "cabin_clean_team_08", "water_waste_team_05", "catering_team_08", "baggage_team_10", "ramp_team_09", "pushback_team_03"], ["ramp_team_04", "ramp_team_01", "baggage_team_05", "fuel_team_01", "cabin_clean_team_01", "water_waste_team_04", "catering_team_01", "baggage_team_04", "ramp_team_03", "pushback_team_02"], ["ramp_team_08", "ramp_team_07", "baggage_team_06", "fuel_team_08", "cabin_clean_team_08", "water_waste_team_06", "catering_team_08", "baggage_team_09", "ramp_team_05", "pushback_team_03"]],
+  "cost":       8294
 }
  
