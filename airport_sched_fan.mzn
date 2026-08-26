@@ -115,71 +115,129 @@ array[FlightID, TASK_IDX] of var 0..horizon: task_start;
 array[FlightID, TASK_IDX] of var LaborID: task_labor;
 
 % ---- Constraints ----  (add yours here; see hackathon.pdf for the full text)
-% Tier 1 (gate feasibility, C1-C5): TODO
-%   C1 each flight's [flight_arr, flight_dep] fits inside its gate's [open, close];
+% Tier 1 (gate feasibility, C1-C5).
+%
+% Precompute the gates that satisfy all static requirements for each flight:
+%   C1 the whole flight stay fits inside the gate's opening window;
+%   C2 a wide-body flight uses a large stand (narrow-body fits either size);
+%   C3 the gate's operation type matches the flight's operation type;
+%   C4 the gate's domestic/international usage matches the flight's carrier.
+array[FlightID] of set of GateID: compatible_gates = [
+  { g | g in GateID where
+      gate_open[g] <= flight_arr[f] /\
+      flight_dep[f] <= gate_close[g] /\
+      (flight_size[f] = narrow \/ gate_stand_size[g] = large) /\
+      gate_op_type[g] = flight_op_type[f] /\
+      gate_usage[g] = flight_carrier[f]
+  }
+  | f in FlightID
+];
 
+% C1-C4: every flight chooses exactly one gate from its compatible set.
+% `gate[f]` is a single enum decision variable, so membership also enforces
+% the "exactly one gate per flight" requirement.
 constraint forall(f in FlightID)(
-  gate_open[gate[f]] <= flight_arr[f] /\
-  flight_dep[f] <= gate_close[gate[f]]
+  gate[f] in compatible_gates[f]
 );
 
-%   C2 a wide-body flight must be at a large stand;
-
-constraint forall(f in FlightID)(
-  flight_size[f] = wide -> gate_stand_size[gate[f]] = large
+% C5: a pair of flights conflicts when neither chronological order leaves the
+% required 30-minute inter-turn gap. A conflicting pair cannot share a gate.
+constraint forall(f1, f2 in FlightID where
+  f1 < f2 /\
+  flight_dep[f1] + min_gate_gap > flight_arr[f2] /\
+  flight_dep[f2] + min_gate_gap > flight_arr[f1]
+)(
+  gate[f1] != gate[f2]
 );
 
-%   C3 the gate's op_type matches the flight's op_type;
+% Tier 2 (crew scheduling, C6-C10).
+%
+% A labor team is compatible with a task when it has the required specialty and
+% its shift has a non-empty interval in which the whole task can be performed.
+% The shift-overlap test is redundant with C7/C10, but removes impossible LaborID
+% values before search.
+array[FlightID, TASK_IDX] of set of LaborID: compatible_labor =
+  array2d(FlightID, TASK_IDX, [
+    if active(f, t) then
+      { l | l in LaborID where
+          labor_kind[l] = required_team[flight_tasks[f, t].kind] /\
+          max(flight_arr[f], labor_shift_start[l]) + flight_tasks[f, t].duration
+            <= min(flight_dep[f], labor_shift_end[l])
+      }
+    else
+      { min(LaborID) }
+    endif
+    | f in FlightID, t in TASK_IDX
+  ]);
 
-constraint forall(f in FlightID)(
-  gate_op_type[gate[f]] = flight_op_type[f]
-);
-
-%   C4 the gate's usage matches the flight's carrier;
-
-constraint forall(f in FlightID)(
-  gate_usage[gate[f]] = flight_carrier[f]
-);
-
-%   C5 two flights sharing a gate need a >= 30-min gap (dep_i + 30 <= arr_j).
-
-constraint forall(f1, f2 in FlightID where f1 < f2)(
-  gate[f1] = gate[f2] ->
-  (flight_dep[f1] + min_gate_gap <= flight_arr[f2] \/
-   flight_dep[f2] + min_gate_gap <= flight_arr[f1])
-);
-
-% Tier 2 (crew scheduling, C6-C10): TODO
-%   C6 the team assigned to a task is of kind required_team[flight_tasks[f,t].kind];
+% C6: every real task is assigned to exactly one team of the required kind.
+% `task_labor[f,t]` is one enum variable, so membership also supplies the
+% exactly-one part of the requirement.
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
-  labor_kind[task_labor[f, t]] = required_team[flight_tasks[f, t].kind]
+  task_labor[f, t] in compatible_labor[f, t]
 );
 
-%   C7 each task runs inside its flight's [flight_arr, flight_dep] window;
+% C7: every real task starts after arrival and finishes before departure.
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
-  flight_arr[f] <= task_start[f, t] /\
+  task_start[f, t] >= flight_arr[f] /\
   task_start[f, t] + flight_tasks[f, t].duration <= flight_dep[f]
 );
-%   C8 precedence: a task starts only once all its required_preds finished;
-constraint forall(f in FlightID, pred, succ in TASK_IDX where
-  active(f, pred) /\ active(f, succ) /\
-  flight_tasks[f, pred].kind in required_preds[flight_tasks[f, succ].kind]
+
+% C8: enforce every precedence arc whose predecessor is present in this
+% flight's task list. Task types absent from a flight create no arc.
+constraint forall(f in FlightID, pred_t, succ_t in TASK_IDX where
+  active(f, pred_t) /\ active(f, succ_t) /\
+  flight_tasks[f, pred_t].kind in required_preds[flight_tasks[f, succ_t].kind]
 )(
-  task_start[f, pred] + flight_tasks[f, pred].duration <= task_start[f, succ]
+  task_start[f, pred_t] + flight_tasks[f, pred_t].duration
+    <= task_start[f, succ_t]
 );
-%   C9 no team is booked on two time-overlapping tasks;
-constraint cumulatives(
-  [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
-  [flight_tasks[f, t].duration | f in FlightID, t in TASK_IDX where active(f, t)],
-  [1 | f in FlightID, t in TASK_IDX where active(f, t)],
-  [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
-  [1 | l in LaborID],
-  true
+
+% C9: tasks assigned to the same LaborID may not overlap. Only pairs whose
+% flight windows overlap, whose required team types match, and which share at
+% least one compatible LaborID can possibly conflict. These static filters are
+% important on the large instances and keep the flattened model compact.
+constraint forall(f1, f2 in FlightID, t1, t2 in TASK_IDX where
+  active(f1, t1) /\ active(f2, t2) /\
+  (f1 < f2 \/ (f1 = f2 /\ t1 < t2)) /\
+  flight_arr[f1] < flight_dep[f2] /\
+  flight_arr[f2] < flight_dep[f1] /\
+  required_team[flight_tasks[f1, t1].kind] =
+    required_team[flight_tasks[f2, t2].kind] /\
+  compatible_labor[f1, t1] intersect compatible_labor[f2, t2] != {}
+)(
+  task_labor[f1, t1] = task_labor[f2, t2] ->
+    (task_start[f1, t1] + flight_tasks[f1, t1].duration <= task_start[f2, t2] \/
+     task_start[f2, t2] + flight_tasks[f2, t2].duration <= task_start[f1, t1])
 );
-%   C10 each team works only inside [labor_shift_start, labor_shift_end].
+
+% C10: a task assigned to a team must be wholly contained in that team's shift.
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
-  labor_shift_start[task_labor[f, t]] <= task_start[f, t] /\
-  task_start[f, t] + flight_tasks[f, t].duration <= labor_shift_end[task_labor[f, t]]
+  task_start[f, t] >= labor_shift_start[task_labor[f, t]] /\
+  task_start[f, t] + flight_tasks[f, t].duration
+    <= labor_shift_end[task_labor[f, t]]
+);
+
+% Teams with identical kind, shift and cost are interchangeable. Require their
+% first appearances to follow LaborID order to remove factorial assignment
+% symmetries while preserving every distinct schedule and objective value.
+constraint forall(rep in LaborID where
+  rep = min({ l | l in LaborID where
+    labor_kind[l] = labor_kind[rep] /\
+    labor_cost[l] = labor_cost[rep] /\
+    labor_shift_start[l] = labor_shift_start[rep] /\
+    labor_shift_end[l] = labor_shift_end[rep]
+  })
+)(
+  value_precede_chain(
+    [l | l in LaborID where
+      labor_kind[l] = labor_kind[rep] /\
+      labor_cost[l] = labor_cost[rep] /\
+      labor_shift_start[l] = labor_shift_start[rep] /\
+      labor_shift_end[l] = labor_shift_end[rep]
+    ],
+    [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)]
+  )
 );
 
 % Tier 3 (routing + rest, C11-C12): TODO
@@ -191,10 +249,42 @@ constraint forall(f in FlightID, t in TASK_IDX where not active(f, t))(
   task_start[f, t] = 0 /\ task_labor[f, t] = min(LaborID)
 );
 
-% ---- Objective: minimise the cost of the DISTINCT teams used: TODO ----
+% ---- Tier 2 objective: cost of the distinct teams used by real tasks ----
 array[LaborID] of var bool: used;
 var int: cost;
-solve minimize cost;
+
+% Exact usage equivalence, restricted to tasks for which a LaborID is a static
+% candidate. The filter avoids materialising impossible task/labor pairs.
+constraint assert(
+  forall(l in LaborID)(labor_cost[l] > 0),
+  "Tier 2 requires strictly positive labor costs"
+);
+constraint forall(l in LaborID)(
+  used[l] <-> exists(f in FlightID, t in TASK_IDX where
+    active(f, t) /\ l in compatible_labor[f, t]
+  )(
+    task_labor[f, t] = l
+  )
+);
+constraint cost = sum(l in LaborID)(labor_cost[l] * bool2int(used[l]));
+
+% Establish a concrete time line before choosing teams. Earliest feasible start
+% values expose the interval graph to the subsequent first-fail labor search.
+solve :: seq_search([
+  int_search(
+    [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+    smallest,
+    indomain_min,
+    complete
+  ),
+  int_search(
+    [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+    first_fail,
+    indomain_min,
+    complete
+  ),
+  int_search([gate[f] | f in FlightID], first_fail, indomain_min, complete)
+]) minimize cost;
 
 % ---- Output (do not modify) ----
 function string: row_gate() =
