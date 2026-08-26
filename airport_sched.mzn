@@ -182,17 +182,14 @@ constraint forall(f in FlightID, pred_t, succ_t in TASK_IDX where
   task_start[f, pred_t] + flight_tasks[f, pred_t].duration
     <= task_start[f, succ_t]
 );
-% C9: tasks assigned to one team cannot overlap.
-constraint forall(f1, f2 in FlightID, t1, t2 in TASK_IDX where
-  active(f1, t1) /\ active(f2, t2) /\
-  (f1 < f2 \/ (f1 = f2 /\ t1 < t2)) /\
-  required_team[flight_tasks[f1, t1].kind] =
-    required_team[flight_tasks[f2, t2].kind] /\
-  compatible_labor[f1, t1] intersect compatible_labor[f2, t2] != {}
-)(
-  task_labor[f1, t1] = task_labor[f2, t2] ->
-    (task_start[f1, t1] + flight_tasks[f1, t1].duration <= task_start[f2, t2] \/
-     task_start[f2, t2] + flight_tasks[f2, t2].duration <= task_start[f1, t1])
+% C9: one cumulative resource of capacity 1 per LaborID prevents overlap.
+constraint cumulatives(
+  [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+  [flight_tasks[f, t].duration | f in FlightID, t in TASK_IDX where active(f, t)],
+  [1 | f in FlightID, t in TASK_IDX where active(f, t)],
+  [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+  array1d(LaborID, [1 | l in LaborID]),
+  true
 );
 % C10: each task lies wholly inside its team's shift.
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
@@ -214,7 +211,9 @@ constraint forall(f in FlightID, t in TASK_IDX where not active(f, t))(
 array[LaborID] of var bool: used;
 var int: cost;
 constraint forall(l in LaborID)(
-  used[l] <-> exists(f in FlightID, t in TASK_IDX where active(f, t))(
+  used[l] <-> exists(f in FlightID, t in TASK_IDX where
+    active(f, t) /\ l in compatible_labor[f, t]
+  )(
     task_labor[f, t] = l
   )
 );
