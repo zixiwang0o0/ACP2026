@@ -1,0 +1,912 @@
+           Part 2:
+       Conflict Analysis
+         and Proofs
+
+    ACP Summer School 2026
+
+
+Emir Demirović
+         Last time…
+
+ Constraint Programming
+
+Propagators and Explanations
+  Linear inequality: ∑𝒘𝒊 𝒙𝒊 ≥ 𝒄
+      Max: 𝒙 = 𝒎𝒂𝒙 𝒚, 𝒛
+           All-Different
+
+
+          Checkers
+             Propagation based on Hall sets!
+                      𝑥1 ∈ 1, 2
+
+                     𝑥2 ∈ 1, 2, 3
+
+                      𝑥3 ∈ 3, 4
+𝑥3 ≥ 3 ∧ 𝑥3 ≤ 5 ∧
+𝑥4 ≥ 3 ∧ 𝑥4 ≤ 5 ∧
+ 𝑥5 ≥ 3 ∧ 𝑥3 ≤ 5
+                     𝑥4 ∈ 3, 4, 5
+        ⇒
+     ⟨𝑥2 ≠ 3⟩         𝑥5 ∈ {4, 5}
+           Checker for All-Different
+
+
+
+1. Reconstruct domains based on the explanation
+
+
+              2. Check condition
+
+                  𝐻 = {𝑥𝑖 }
+
+
+              ራ 𝐷 𝑥𝑖 < |𝐻| ?
+                    In this lecture…
+
+
+
+
+    Conflict Analysis            Proof-theoretic view of CP
+ Derive new constraints                 Certificates
+by combining constraints
+Trail   Constraints
+Trail            Constraints
+
+
+
+
+         info
+        about
+        search
+Trail                      Constraints
+        Decided 𝒙𝟗 ≤ 𝟎
+        Decision level 1
+Trail                      Constraints
+        Decided 𝒙𝟐 ≤ 𝟑
+        Decision level 3
+      Trail          Constraints
+
+
+
+
+   Constraint 𝒄𝟏
+Propagated 𝒙𝟑 ≥ 𝟏
+  Decision level 3
+Trail                        Constraints
+
+
+
+
+           Constraint 𝒄𝟐
+        Propagated 𝒙𝟒 ≥ 𝟏
+          Decision level 3
+Trail                       Constraints
+
+
+
+
+         Constraint 𝒄𝟔
+        Declares conflict
+Trail                  Constraints
+
+
+          Classical
+        Backtracking
+Trail                  Constraints
+
+
+          Classical
+        Backtracking
+
+
+
+             Undo
+            decision
+  Trail                    Constraints
+
+
+             Classical
+           Backtracking
+
+
+
+⟨𝒙𝟓 ≥ 𝟑⟩
+
+
+           Post negation
+           and continue
+Trail   Conflict Analysis
+
+
+
+
+              Derive nogood
+           based on constraints
+  Trail                      Conflict Analysis
+
+
+
+
+⟨𝒙𝟔 ≤ 𝟏⟩
+           Backjump and propagate:
+                Decision level 3
+  Trail                        Conflict Analysis
+
+
+
+
+⟨𝒙𝟔 ≤ 𝟏⟩
+           Backjump and propagate:
+                Decision level 3
+               Skipped
+           Decision level 4!
+Trail                       Constraints
+
+
+
+
+         Constraint 𝒄𝟔
+        Declares conflict
+𝒄𝟔 : −𝒙𝟑 − 𝒙𝟒 − 𝒙𝟕 − 𝒙𝟖 ≥ −𝟒
+
+
+
+
+      Conflict Nogood
+                    𝒄𝟔 : −𝒙𝟑 − 𝒙𝟒 − 𝒙𝟕 − 𝒙𝟖 ≥ −𝟒
+
+
+
+
+Decision level of
+  assignment
+         𝒄𝟔 : −𝒙𝟑 − 𝒙𝟒 − 𝒙𝟕 − 𝒙𝟖 ≥ −𝟒
+
+
+
+
+Trail (Partial)
+
+
+
+                       Last assigned
+                     atomic constraint
+𝒄𝟔 : −𝒙𝟑 − 𝒙𝟒 − 𝒙𝟕 − 𝒙𝟖 ≥ −𝟒
+
+
+
+
+   𝑐5 : 2𝑥8 − 𝑥6 + 𝑥9 ≥ 0
+𝒄𝟔 : −𝒙𝟑 − 𝒙𝟒 − 𝒙𝟕 − 𝒙𝟖 ≥ −𝟒
+
+
+
+
+                            Replace ⟨𝒙𝟖 ≥ 𝟏⟩
+   𝑐5 : 2𝑥8 − 𝑥6 + 𝑥9 ≥ 0    with its reason
+New nogood!
+Trail (Partial)
+                    Removed
+                  dependency on
+                     ⟨𝒙𝟖 ≥ 𝟏⟩
+Trail (Partial)
+
+
+
+
+                  Repeat procedure
+                   from ⟨𝒙𝟕 ≥ 𝟐⟩
+𝒄𝟒 : 𝒙𝟕 − 𝒙𝟔 ≥ 𝟎
+              𝒄𝟒 : 𝒙𝟕 − 𝒙𝟔 ≥ 𝟎
+
+New nogood!
+Propagates?
+Propagates
+     at
+           “asserting”
+ decision
+  level 3!
+Trail
+  Trail
+
+
+
+
+⟨𝒙𝟔 ≤ 𝟏⟩
+           Backjump and propagate:
+                Decision level 3
+Conflict Analysis
+Conflict Analysis
+Conflict Analysis
+Conflict Analysis
+Conflict Analysis
+Conflict Analysis
+  Conflict Analysis
+
+
+
+
+Why does this work?
+Why does conflict analysis work?
+
+
+  Propagation-based rewriting
+
+      Conflict preservation
+
+           Soundness
+
+          Termination
+       Why does conflict analysis work?
+
+
+         Propagation-based rewriting
+
+
+“we only rewrite propagated atomic constraints”
+       Why does conflict analysis work?
+
+
+         Propagation-based rewriting
+
+
+“we only rewrite propagated atomic constraints”
+  Why does conflict analysis work?
+
+        Conflict preservation
+
+“each new nogood is also conflicting”
+                Why does conflict analysis work?
+
+                      Conflict preservation
+
+              “each new nogood is also conflicting”
+
+
+
+
+   Started with
+conflicting nogood
+                Why does conflict analysis work?
+
+
+Assigned “true (⊤)    Conflict preservation
+
+              “each new nogood is also conflicting”
+                Why does conflict analysis work?
+
+                      Conflict preservation
+
+              “each new nogood is also conflicting”
+
+
+
+
+Must be “true” (⊤)
+    because
+  propagating
+                Why does conflict analysis work?
+
+                      Conflict preservation
+
+              “each new nogood is also conflicting”
+These must also
+  “true” (⊤)
+    Why does conflict analysis work?
+
+               Soundness
+
+“new nogoods are implied by the problem”
+    Why does conflict analysis work?
+
+               Soundness
+
+“new nogoods are implied by the problem”
+
+
+           Rewriting is sound
+
+
+         Explanations are sound
+     Why does conflict analysis work?
+
+               Termination
+
+“eventually we derive an asserting nogood”
+        Why does conflict analysis work?
+
+                  Termination
+
+  “eventually we derive an asserting nogood”
+
+
+Atomic constraints are replaced based on recency
+
+                 Finite trail size
+Conflict Analysis
+
+                    Propagation-based rewriting
+
+
+                       Conflict preservation
+
+
+                            Soundness
+
+
+                           Termination
+        So far…
+
+
+    Conflict Analysis
+
+     Learn nogoods
+by combining explanations
+
+  Potentially backjump
+            Up next…
+
+Conflict-Driven Constraint Learning
+
+
+ Proofs of infeasibility/optimality
+
+
+      More general learning
+        Extended nogoods
+        Hypercube linears
+           Search
+
+
+
+      Make a decision
+
+Propagate based on constraints
+
+     If conflict, backtrack
+              Constraint
+Conflict-Driven Clause Learning
+             (CDCL)
+
+                        Conflict-driven branching
+        Make a decision
+                                 (VSIDS)
+
+ Propagate based on constraints
+                                   “atomic constraints
+                                  appearing in conflicts
+      If conflict, backtrack         are important”
+              Constraint
+Conflict-Driven Clause Learning
+             (CDCL)
+
+        Make a decision
+
+ Propagate based on constraints …and learned nogoods
+
+      If conflict, backtrack
+              Constraint
+Conflict-Driven Clause Learning
+             (CDCL)
+
+        Make a decision
+
+ Propagate based on constraints
+
+      If conflict, backtrack
+                  Conflict analysis
+                  Add learned nogood to database
+                  Backjump
+                           Constraint
+             Conflict-Driven Clause Learning
+                          (CDCL)
+
+                     Make a decision
+
+              Propagate based on constraints
+
+
+ Restarts          If conflict, backtrack
+
+ Nogood
+Management
+                           Constraint
+             Conflict-Driven Clause Learning
+                          (CDCL)
+
+                                     Conflict-driven branching
+                     Make a decision
+                                              (VSIDS)
+
+              Propagate based on constraints …and learned nogoods
+
+
+ Restarts          If conflict, backtrack
+                               Conflict analysis
+ Nogood                        Add learned nogood to database
+Management                     Backjump
+              Constraint
+Conflict-Driven Clause Learning
+             (CDCL)
+
+
+
+      CDCL stops when…
+              Constraint
+Conflict-Driven Clause Learning
+             (CDCL)
+
+
+
+      CDCL stops when…
+
+       1. Feasible solution
+              Constraint
+Conflict-Driven Clause Learning
+             (CDCL)
+
+
+
+      CDCL stops when…
+
+       1. Feasible solution
+
+ 2. Learn infeasible nogood ⊤ →⊥
+                 Constraint
+   Conflict-Driven Clause Learning
+                (CDCL)
+
+
+
+           CDCL stops when…
+
+            1. Feasible solution
+
+     2. Learn infeasible nogood ⊤ →⊥
+
+Solver trace is a certificate of infeasibility!
+        Proof-Theoretic View
+
+
+           𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+           𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+             𝑥 ∈ 0, 1, 2
+             𝑦, 𝑧 ∈ {0, 1}
+
+
+
+Construct a certificate of infeasibility!
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}                       Claim
+                     this nogood is implied by the constraints
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}      Proof of the claim
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3   Explanation
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}      Derived through
+                     conflict analysis
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}
+
+                     New claim
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}
+
+
+                     Proof of the claim
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}
+          Previously proven claim used
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6     Refers to the bounds of variables
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2        Final claim of infeasibility
+  𝑦, 𝑧 ∈ {0, 1}
+                  Proof of the final claim
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}
+Certificate of
+ infeasibility
+
+
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}
+ 𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+ 𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+   𝑥 ∈ 0, 1, 2
+   𝑦, 𝑧 ∈ {0, 1}
+ Explanations
+        +
+Conflict Analysis
+𝑐1 : 5𝑥 + 3𝑦 ≤ 6
+𝑐2 : 𝑥 + 𝑦 + 𝑧 ≥ 3
+
+  𝑥 ∈ 0, 1, 2
+  𝑦, 𝑧 ∈ {0, 1}
+
+  Claim about
+  the instance,
+ not the solver!     (See our CP’26 paper)
+   Stronger
+Conflict Analysis
+              Nogood Propagation
+
+
+
+
+Atomic constraint
+    {? , ⊤, ⊥}
+              Nogood Propagation
+
+
+
+
+Atomic constraint                        True
+    {? , ⊤, ⊥}
+
+        𝒙𝟑 ∈ [𝟔, 𝟏𝟎]      ⟨𝒙𝟑 ≥ 𝟓⟩   ⊤
+              Nogood Propagation
+
+
+
+
+Atomic constraint
+    {? , ⊤, ⊥}
+
+
+
+        𝒙𝟑 ∈ [𝟔, 𝟏𝟎]      ⟨𝒙𝟑 ≤ 𝟓⟩         ⊥
+
+                                   False
+              Nogood Propagation
+
+
+
+
+Atomic constraint
+    {? , ⊤, ⊥}
+
+
+                                         Unassigned
+
+
+        𝒙𝟑 ∈ [𝟎, 𝟏𝟎]      ⟨𝒙𝟑 ≥ 𝟓⟩   ?
+Nogood Propagation
+
+
+𝑨∧𝑩∧𝑪∧𝑫⇒⊥
+
+𝑨, 𝑩, 𝑪, 𝑫 ∈ {? , ⊤, ⊥}
+No propagation when all unassigned
+
+
+                 𝑨∧𝑩∧𝑪∧𝑫⇒⊥
+
+
+                      𝑨=?
+                      𝑩=?
+                      𝑪=?
+                      𝑫=?
+No propagation…
+
+
+                  𝑨∧𝑩∧𝑪∧𝑫⇒⊥
+
+
+                     𝑨=⊤
+                     𝑩=?
+                    𝑪=?
+                    𝑫=?
+Still no propagation…
+
+
+
+𝑨∧𝑩∧𝑪∧𝑫⇒⊥
+
+
+     𝑨=⊤
+     𝑩=⊤
+    𝑪=?
+    𝑫=?
+     Unit Propagation!
+
+
+
+𝑨∧𝑩∧𝑪∧𝑫⇒⊥
+
+
+   𝑨=⊤
+   𝑩=⊤
+  𝑪=⊤
+  𝑫=?
+            𝑫 forced to ⊥
+
+
+𝑨∧𝑩∧𝑪∧𝑫⇒⊥
+
+
+   𝑨=⊤
+   𝑩=⊤
+  𝑪=⊤
+  𝑫=⊥
+𝑨∧𝑩∧𝑪∧𝑫⇒⊥
+       ഥ
+ 𝑨∧𝑩∧𝑪⇒𝑫
+   𝑨=⊤
+   𝑩=⊤
+  𝑪=⊤
+  𝑫=⊥
+Nogood Propagation
+
+𝑨 𝟏 ∧ 𝑨𝟐 ∧ ⋯ ∧ 𝑨𝒏 ⇒ ⊥
+           Nogood Propagation
+
+           𝑨 𝟏 ∧ 𝑨𝟐 ∧ ⋯ ∧ 𝑨𝒏 ⇒ ⊥
+
+
+Conflict
+𝑨𝒊 = ⊤
+            Nogood Propagation
+
+            𝑨 𝟏 ∧ 𝑨𝟐 ∧ ⋯ ∧ 𝑨𝒏 ⇒ ⊥
+
+
+Conflict                            Propagation
+𝑨𝒊 = ⊤                              𝑨𝟏…(𝒏−𝟏) = ⊤
+       “unit propagation”             𝑨𝒏 = ⊥
+
+
+                            𝑨𝟏 ∧ 𝑨𝟐 ∧ ⋯ ∧ 𝑨𝒏−𝟏 ⇒ 𝑨𝒏
+ Can we do
+   more
+propagation?
+Extended Propagation
+
+
+𝑨∧𝑩∧𝑪∧𝑫⇒⊥
+
+
+      𝑨=?
+      𝑩=?
+     𝑪=?
+     𝑫=?
+No propagation…
+
+
+                  𝑨∧𝑩∧𝑪∧𝑫⇒⊥
+
+
+                     𝑨=⊤
+                     𝑩=?
+                    𝑪=?
+                    𝑫=?
+Still no propagation according to unit propagation…
+
+
+
+         𝑨∧𝑩∧𝑪∧𝑫⇒⊥
+
+
+                𝑨=⊤
+                𝑩=⊤
+               𝑪=?
+               𝑫=?
+   …but if we look at the atomic constraints…
+
+
+
+𝒙≥𝟓 ∧ 𝒚≥𝟐 ∧ 𝒛≥𝟏 ∧ 𝒛≤𝟑 ⇒⊥
+
+
+           𝒙≥𝟓 =⊤
+           𝒚≥𝟑 =⊤
+            𝒛≥𝟏 =?
+            𝒛≤𝟑 =?
+𝒙≥𝟓 ∧ 𝒚≥𝟐 ∧ 𝒛≥𝟏 ∧ 𝒛≤𝟑 ⇒⊥
+𝒙≥𝟓 ∧ 𝒚≥𝟐 ⇒ 𝒛≠𝟏 ∧ 𝒛≠𝟐 ∧ 𝒛≠𝟑
+
+
+
+
+                  We can propagate!
+                     “extended
+                 nogood propagation”
+Conflict Analysis with Extended Nogood Propagation
+
+
+
+                propagating nogood
+
+                      N is not propagating
+               Conflict Analysis with Extended Nogood Propagation
+
+
+
+                               propagating nogood
+
+                                     N is not propagating
+
+
+
+
+(see our CP’26 paper…)
+                         More general learning!
+  Conflict analysis
+      is about
+combining constraints!
+  Problem with two constraints
+
+
+
+෍ 𝒘𝒊 𝒙𝒊 ≥ 𝒌    ∧     ෍ 𝒘𝒊 𝒙𝒊 ≤ 𝒌 − 𝟏
+    Problem with two constraints
+
+
+
+ ෍ 𝒘𝒊 𝒙𝒊 ≥ 𝒌       ∧         ෍ 𝒘𝒊 𝒙𝒊 ≤ 𝒌 − 𝟏
+
+
+
+               Infeasible!
+
+Easy problem, but exponential time for
+   our search with conflict analysis!
+                  Cutting planes: a better way…
+
+              Multiply by -1
+
+෍ 𝒘𝒊 𝒙𝒊 ≥ 𝒌                    ෍ −𝒘𝒊 𝒙𝒊 ≤ −𝒌
+
+
+
+
+                           ෍ 𝒘𝒊 𝒙𝒊 ≤ 𝒌 − 𝟏
+              Multiply by -1
+
+෍ 𝒘𝒊 𝒙𝒊 ≥ 𝒌                    ෍ −𝒘𝒊 𝒙𝒊 ≤ −𝒌
+                                               Add inequalities
+                                               (cutting planes)
+
+
+
+
+                           ෍ 𝒘𝒊 𝒙𝒊 ≤ 𝒌 − 𝟏
+              Multiply by -1
+
+෍ 𝒘𝒊 𝒙𝒊 ≥ 𝒌                    ෍ −𝒘𝒊 𝒙𝒊 ≤ −𝒌
+                                                   Add inequalities
+                                                   (cutting planes)
+                                                        𝟎 ≤ −𝟏
+
+                           ෍ 𝒘𝒊 𝒙𝒊 ≤ 𝒌 − 𝟏
+                                                Infeasibility!
+
+                                          Exponentially better
+                                           (on this example)
+  Combining Constraints
+
+
+   1. “Rewrite” nogoods
+                           Complete
+two nogoods → new nogood
+     Combining Constraints
+
+
+     1. “Rewrite” nogoods
+                                   Complete
+  two nogoods → new nogood
+
+
+        2. Cutting planes
+                                   Incomplete
+two inequalities→ new inequality
+     Combining Constraints
+
+
+     1. “Rewrite” nogoods
+                                   Complete
+  two nogoods → new nogood
+
+
+        2. Cutting planes
+                                   Incomplete
+two inequalities→ new inequality
+
+
+
+   Can we combine the two?
+ Hypercube Linear Constraints
+
+𝑨𝟏 ∧ 𝑨𝟐 ∧ ⋯ ∧ 𝑨𝒏 ⇒ ∑𝒘𝒊 𝒙𝒊 ≥ 𝒌
+             Hypercube Linear Constraints
+
+           𝑨𝟏 ∧ 𝑨𝟐 ∧ ⋯ ∧ 𝑨𝒏 ⇒ ∑𝒘𝒊 𝒙𝒊 ≥ 𝒌
+
+     Generalises                         Generalises
+      nogoods                        linear inequalities
+𝑨𝟏 ∧ 𝑨 𝟐 ∧ ⋯ ∧ 𝑨 𝒏 ⇒ ⊥                ⊤ ⇒ ∑𝒘𝒊 𝒙𝒊 ≥ 𝒌
+Conflict Analysis with Hypercube Linears
+
+                          Conflict hypercube linear
+
+                 propagating hypercube linear
+
+                       N is not propagating
+                                Hypercube linear HL
+                                 that propagated A
+        N ← Combine HL and N
+Conflict Analysis with Hypercube Linears
+
+                          Conflict hypercube linear
+
+                 propagating hypercube linear
+
+                       N is not propagating
+                                Hypercube linear HL
+                                 that propagated A
+        N ← Combine HL and N
+
+                              Analogous as before!
+Conflict Analysis with Hypercube Linears
+
+                          Conflict hypercube linear
+
+                 propagating hypercube linear
+
+                       N is not propagating
+                                Hypercube linear HL
+                                 that propagated A
+        N ← Combine HL and N
+                                   More complex!
+                             (see our CPAIOR’26 paper…)
+            Part 1                      Part 2
+
+Propagators and Explanations        Conflict Analysis
+  Linear inequality: ∑𝒘𝒊 𝒙𝒊 ≥ 𝒄   Combine constraints
+      Max: 𝒙 = 𝒎𝒂𝒙 𝒚, 𝒛
+           All-Different
+
+
+          Checkers                      Proofs
+
+
+                                     Beyond LCG
+                                  Extended nogoods
+                                  Hypercube linears
+

@@ -113,6 +113,8 @@ function bool: active(FlightID: f, int: t) = t <= flight_n_tasks[f];
 array[FlightID] of var GateID: gate;
 array[FlightID, TASK_IDX] of var 0..horizon: task_start;
 array[FlightID, TASK_IDX] of var LaborID: task_labor;
+array[LaborID] of var bool: used;
+var int: cost;
 
 % ---- Constraints ----  (add yours here; see hackathon.pdf for the full text)
 % Tier 1: precompute gates satisfying C1-C4 to shrink gate domains.
@@ -212,6 +214,17 @@ constraint forall(rep in LaborID where
   )
 );
 
+% Cost dominance for otherwise interchangeable teams: an expensive copy is
+% never needed unless every cheaper copy with the same capability is used.
+constraint forall(cheap, expensive in LaborID where
+  labor_kind[cheap] = labor_kind[expensive] /\
+  labor_shift_start[cheap] = labor_shift_start[expensive] /\
+  labor_shift_end[cheap] = labor_shift_end[expensive] /\
+  labor_cost[cheap] < labor_cost[expensive]
+)(
+  used[expensive] -> used[cheap]
+);
+
 % Tier 3 (routing + rest, C11-C12): TODO
 %   C11 two consecutive tasks of one team at gates g1,g2 need travel[g1,g2] minutes between them;
 %   C12 a team needs a >= 15-min rest once its work has spanned > 90 minutes.
@@ -222,8 +235,6 @@ constraint forall(f in FlightID, t in TASK_IDX where not active(f, t))(
 );
 
 % ---- Objective: minimise the cost of the DISTINCT teams used: TODO ----
-array[LaborID] of var bool: used;
-var int: cost;
 constraint forall(l in LaborID)(
   used[l] <-> exists(f in FlightID, t in TASK_IDX where
     active(f, t) /\ l in compatible_labor[f, t]
@@ -233,6 +244,26 @@ constraint forall(l in LaborID)(
 );
 constraint cost = sum(l in LaborID)(
   labor_cost[l] * bool2int(used[l])
+);
+
+% Compulsory-part lower bound: if a task's latest start is before its earliest
+% end, that interval must consume one team regardless of its chosen start.
+array[TeamType] of int: min_teams_lb = [
+  max(time in 0..horizon)(
+    sum(f in FlightID, t in TASK_IDX where
+      active(f, t) /\ required_team[flight_tasks[f, t].kind] = k
+    )(
+      bool2int(
+        flight_dep[f] - flight_tasks[f, t].duration < time /\
+        time < flight_arr[f] + flight_tasks[f, t].duration
+      )
+    )
+  )
+  | k in TeamType
+];
+constraint forall(k in TeamType)(
+  sum(l in LaborID where labor_kind[l] = k)(bool2int(used[l]))
+    >= min_teams_lb[k]
 );
 solve :: seq_search([
   int_search(
