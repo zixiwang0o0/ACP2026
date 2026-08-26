@@ -156,12 +156,39 @@ constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
 );
 
 %   C7 each task runs inside its flight's [flight_arr, flight_dep] window;
-
-
+constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
+  flight_arr[f] <= task_start[f, t] /\
+  task_start[f, t] + flight_tasks[f, t].duration <= flight_dep[f]
+);
 
 %   C8 precedence: a task starts only once all its required_preds finished;
+constraint forall(f in FlightID, pred, succ in TASK_IDX where
+  active(f, pred) /\ active(f, succ) /\
+  flight_tasks[f, pred].kind in required_preds[flight_tasks[f, succ].kind]
+)(
+  task_start[f, pred] + flight_tasks[f, pred].duration <= task_start[f, succ]
+);
+
 %   C9 no team is booked on two time-overlapping tasks;
+constraint forall(f1, f2 in FlightID, t1, t2 in TASK_IDX where
+  active(f1, t1) /\ active(f2, t2) /\
+  (f1 < f2 \/ (f1 = f2 /\ t1 < t2)) /\
+  flight_arr[f1] < flight_dep[f2] /\
+  flight_arr[f2] < flight_dep[f1] /\
+  required_team[flight_tasks[f1, t1].kind] =
+    required_team[flight_tasks[f2, t2].kind]
+)(
+  task_labor[f1, t1] = task_labor[f2, t2] ->
+    (task_start[f1, t1] + flight_tasks[f1, t1].duration <= task_start[f2, t2] \/
+     task_start[f2, t2] + flight_tasks[f2, t2].duration <= task_start[f1, t1])
+);
+
 %   C10 each team works only inside [labor_shift_start, labor_shift_end].
+constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
+  labor_shift_start[task_labor[f, t]] <= task_start[f, t] /\
+  task_start[f, t] + flight_tasks[f, t].duration
+    <= labor_shift_end[task_labor[f, t]]
+);
 
 % Tier 3 (routing + rest, C11-C12): TODO
 %   C11 two consecutive tasks of one team at gates g1,g2 need travel[g1,g2] minutes between them;
@@ -175,6 +202,14 @@ constraint forall(f in FlightID, t in TASK_IDX where not active(f, t))(
 % ---- Objective: minimise the cost of the DISTINCT teams used: TODO ----
 array[LaborID] of var bool: used;
 var int: cost;
+constraint forall(l in LaborID)(
+  used[l] <-> exists(f in FlightID, t in TASK_IDX where active(f, t))(
+    task_labor[f, t] = l
+  )
+);
+constraint cost = sum(l in LaborID)(
+  labor_cost[l] * bool2int(used[l])
+);
 solve minimize cost;
 
 % ---- Output (do not modify) ----
