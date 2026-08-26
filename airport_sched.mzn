@@ -151,10 +151,14 @@ constraint forall(f1, f2 in FlightID where f1 < f2)(
 
 % Tier 2 (crew scheduling, C6-C10): TODO
 %   C6 the team assigned to a task is of kind required_team[flight_tasks[f,t].kind];
-
-
+constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
+  labor_kind[task_labor[f, t]] = required_team[flight_tasks[f, t].kind]
+);
 
 %   C7 each task runs inside its flight's [flight_arr, flight_dep] window;
+
+
+
 %   C8 precedence: a task starts only once all its required_preds finished;
 %   C9 no team is booked on two time-overlapping tasks;
 %   C10 each team works only inside [labor_shift_start, labor_shift_end].
