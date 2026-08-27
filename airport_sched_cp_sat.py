@@ -151,9 +151,9 @@ def solve(data: dict, time_limit: float, workers: int) -> dict | None:
                 rested = m.new_bool_var(f"rest_{i}_{j}_{l}")
                 m.add_implication(rested, arc)
                 m.add(start[j] >= end[i] + tv + 15).only_enforce_if(rested)
-                m.add(start[j] <= end[i] + tv + 14).only_enforce_if([arc, rested.not_()])
+                m.add(start[j] <= end[i] + tv + 14).only_enforce_if([arc, rested.Not()])
                 m.add(streak[j] == start[j]).only_enforce_if(rested)
-                m.add(streak[j] == streak[i]).only_enforce_if([arc, rested.not_()])
+                m.add(streak[j] == streak[i]).only_enforce_if([arc, rested.Not()])
         m.add_circuit(arcs)
 
     cost = sum(data["labor_cost"][l] * used[l] for l in range(L))
