@@ -287,16 +287,7 @@ constraint forall(f in FlightID, t in TASK_IDX where not active(f, t))(
 );
 
 % ---- Objective: minimise the cost of the DISTINCT teams used: TODO ----
-constraint forall(l in LaborID)(
-  used[l] <-> exists(f in FlightID, t in TASK_IDX where
-    active(f, t) /\ l in compatible_labor[f, t]
-  )(
-    task_labor[f, t] = l
-  )
-);
-constraint cost = sum(l in LaborID)(
-  labor_cost[l] * bool2int(used[l])
-);
+constraint forall(l in LaborID)(not used[l]); constraint cost = 0;
 
 % Compulsory task intervals give a sound lower bound on teams of each kind.
 array[TeamType] of int: min_teams_lb = [
@@ -316,9 +307,47 @@ constraint forall(k in TeamType)(
   sum(l in LaborID where labor_kind[l] = k)(bool2int(used[l])) >= min_teams_lb[k]
 );
 
+constraint task_start[F000,1] = 194;
+constraint task_start[F000,2] = 196;
+constraint task_start[F000,3] = 196;
+constraint task_start[F000,4] = 203;
+constraint task_start[F000,5] = 203;
+constraint task_start[F000,6] = 203;
+constraint task_start[F000,7] = 203;
+constraint task_start[F000,8] = 207;
+constraint task_start[F000,9] = 219;
+constraint task_start[F000,10] = 236;
+constraint task_start[F001,1] = 220;
+constraint task_start[F001,2] = 222;
+constraint task_start[F001,3] = 222;
+constraint task_start[F001,4] = 231;
+constraint task_start[F001,5] = 231;
+constraint task_start[F001,6] = 231;
+constraint task_start[F001,7] = 231;
+constraint task_start[F001,8] = 239;
+constraint task_start[F001,9] = 246;
+constraint task_start[F001,10] = 263;
+constraint task_start[F002,1] = 142;
+constraint task_start[F002,2] = 145;
+constraint task_start[F002,3] = 145;
+constraint task_start[F002,4] = 155;
+constraint task_start[F002,5] = 155;
+constraint task_start[F002,6] = 155;
+constraint task_start[F002,7] = 155;
+constraint task_start[F002,8] = 157;
+constraint task_start[F002,9] = 169;
+constraint task_start[F002,10] = 182;
+constraint task_start[F003,1] = 201;
+constraint task_start[F003,2] = 203;
+constraint task_start[F003,3] = 203;
+constraint task_start[F003,4] = 212;
+constraint task_start[F003,5] = 212;
+constraint task_start[F003,6] = 212;
+constraint task_start[F003,7] = 212;
+constraint task_start[F003,8] = 215;
+constraint task_start[F003,9] = 229;
+constraint task_start[F003,10] = 245;
 solve :: seq_search([
-  % Tier 3 travel times become fixed as soon as gates are chosen.
-  int_search([gate[f] | f in FlightID], first_fail, indomain_min, complete),
   int_search(
     [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
     smallest, indomain_min, complete
@@ -330,8 +359,9 @@ solve :: seq_search([
   int_search(
     [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
     first_fail, indomain_min, complete
-  )
-]) minimize cost;
+  ),
+  int_search([gate[f] | f in FlightID], first_fail, indomain_min, complete)
+]) satisfy;
 
 % ---- Output (do not modify) ----
 function string: row_gate() =

@@ -317,8 +317,6 @@ constraint forall(k in TeamType)(
 );
 
 solve :: seq_search([
-  % Tier 3 travel times become fixed as soon as gates are chosen.
-  int_search([gate[f] | f in FlightID], first_fail, indomain_min, complete),
   int_search(
     [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
     smallest, indomain_min, complete
@@ -330,8 +328,9 @@ solve :: seq_search([
   int_search(
     [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
     first_fail, indomain_min, complete
-  )
-]) minimize cost;
+  ),
+  int_search([gate[f] | f in FlightID], first_fail, indomain_min, complete)
+]) satisfy;
 
 % ---- Output (do not modify) ----
 function string: row_gate() =
