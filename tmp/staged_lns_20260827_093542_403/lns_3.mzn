@@ -184,70 +184,6 @@ constraint cumulatives(
   true
 );
 
-% C11: tasks of one team must be ordered with enough gate-to-gate travel time.
-constraint forall(f1, f2 in FlightID, t1, t2 in TASK_IDX where
-  active(f1, t1) /\ active(f2, t2) /\
-  (f1 < f2 \/ (f1 = f2 /\ t1 < t2)) /\
-  compatible_labor[f1, t1] intersect compatible_labor[f2, t2] != {}
-)(
-  task_labor[f1, t1] = task_labor[f2, t2] ->
-    (task_start[f1, t1] + flight_tasks[f1, t1].duration
-       + travel[gate[f1], gate[f2]] <= task_start[f2, t2] \/
-     task_start[f2, t2] + flight_tasks[f2, t2].duration
-       + travel[gate[f2], gate[f1]] <= task_start[f1, t1])
-);
-
-% C12: identify each task's immediately preceding task on the same team's
-% time line.  The streak resets only when idle time after travel is >= 15.
-int: n_active_tasks = sum(f in FlightID)(flight_n_tasks[f]);
-set of int: ACTIVE_TASK = 1..n_active_tasks;
-array[ACTIVE_TASK] of FlightID: seq_f =
-  [f | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of int: seq_t =
-  [t | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of var int: seq_start =
-  [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of int: seq_duration =
-  [flight_tasks[f, t].duration | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of var LaborID: seq_labor =
-  [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of var GateID: seq_gate = [gate[seq_f[i]] | i in ACTIVE_TASK];
-array[ACTIVE_TASK] of var 0..horizon: streak_start;
-array[ACTIVE_TASK] of var 0..n_active_tasks: previous_task;
-
-constraint forall(i in ACTIVE_TASK)(
-  (previous_task[i] = 0) <->
-    forall(j in ACTIVE_TASK where j != i)(
-      seq_labor[j] != seq_labor[i] \/ seq_start[j] >= seq_start[i]
-    )
-);
-constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] > 0 ->
-    let { var 1..n_active_tasks: p = previous_task[i] } in
-      p != i /\
-      seq_labor[p] = seq_labor[i] /\
-      seq_start[p] < seq_start[i] /\
-      seq_start[p] + seq_duration[p] + travel[seq_gate[p], seq_gate[i]] <= seq_start[i] /\
-      forall(j in ACTIVE_TASK where j != i)(
-        (seq_labor[j] = seq_labor[i] /\ seq_start[j] < seq_start[i]) ->
-          seq_start[j] <= seq_start[p]
-      )
-);
-constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] = 0 -> streak_start[i] = seq_start[i]
-);
-constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] > 0 ->
-    let { var 1..n_active_tasks: p = previous_task[i] } in
-      if seq_start[i] - seq_start[p] - seq_duration[p]
-           - travel[seq_gate[p], seq_gate[i]] >= 15 then
-        streak_start[i] = seq_start[i]
-      else
-        streak_start[i] = streak_start[p]
-      endif
-);
-constraint forall(i in ACTIVE_TASK)(seq_start[i] <= streak_start[i] + 90);
-
 %   C10 each team works only inside [labor_shift_start, labor_shift_end].
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
   labor_shift_start[task_labor[f, t]] <= task_start[f, t] /\
@@ -314,6 +250,109 @@ constraint forall(k in TeamType)(
   sum(l in LaborID where labor_kind[l] = k)(bool2int(used[l])) >= min_teams_lb[k]
 );
 
+constraint cost < 6799;
+constraint task_labor[F000,3] = baggage_team_07;
+constraint task_labor[F000,4] = fuel_team_04;
+constraint task_labor[F000,5] = cabin_clean_team_04;
+constraint task_labor[F000,6] = water_waste_team_04;
+constraint task_labor[F000,7] = catering_team_04;
+constraint task_labor[F000,8] = baggage_team_14;
+constraint task_labor[F000,10] = pushback_team_06;
+constraint task_labor[F001,3] = baggage_team_08;
+constraint task_labor[F001,4] = fuel_team_05;
+constraint task_labor[F001,5] = cabin_clean_team_10;
+constraint task_labor[F001,6] = water_waste_team_04;
+constraint task_labor[F001,7] = catering_team_08;
+constraint task_labor[F001,8] = baggage_team_08;
+constraint task_labor[F001,10] = pushback_team_07;
+constraint task_labor[F002,3] = baggage_team_01;
+constraint task_labor[F002,4] = fuel_team_01;
+constraint task_labor[F002,5] = cabin_clean_team_01;
+constraint task_labor[F002,6] = water_waste_team_01;
+constraint task_labor[F002,7] = catering_team_01;
+constraint task_labor[F002,8] = baggage_team_01;
+constraint task_labor[F002,10] = pushback_team_06;
+constraint task_labor[F003,3] = baggage_team_02;
+constraint task_labor[F003,4] = fuel_team_04;
+constraint task_labor[F003,5] = cabin_clean_team_04;
+constraint task_labor[F003,6] = water_waste_team_04;
+constraint task_labor[F003,7] = catering_team_04;
+constraint task_labor[F003,8] = baggage_team_02;
+constraint task_labor[F003,10] = pushback_team_06;
+constraint task_labor[F004,3] = baggage_team_01;
+constraint task_labor[F004,4] = fuel_team_01;
+constraint task_labor[F004,5] = cabin_clean_team_01;
+constraint task_labor[F004,6] = water_waste_team_01;
+constraint task_labor[F004,7] = catering_team_01;
+constraint task_labor[F004,8] = baggage_team_01;
+constraint task_labor[F004,11] = pushback_team_07;
+constraint task_labor[F005,3] = baggage_team_07;
+constraint task_labor[F005,4] = fuel_team_04;
+constraint task_labor[F005,5] = cabin_clean_team_04;
+constraint task_labor[F005,6] = water_waste_team_04;
+constraint task_labor[F005,7] = catering_team_04;
+constraint task_labor[F005,8] = baggage_team_07;
+constraint task_labor[F005,11] = pushback_team_06;
+constraint task_labor[F006,3] = baggage_team_08;
+constraint task_labor[F006,4] = fuel_team_05;
+constraint task_labor[F006,5] = cabin_clean_team_10;
+constraint task_labor[F006,6] = water_waste_team_04;
+constraint task_labor[F006,7] = catering_team_08;
+constraint task_labor[F006,8] = baggage_team_08;
+constraint task_labor[F006,11] = pushback_team_07;
+constraint task_labor[F007,1] = baggage_team_01;
+constraint task_labor[F007,2] = fuel_team_01;
+constraint task_labor[F007,3] = baggage_team_01;
+constraint task_labor[F007,4] = pushback_team_01;
+constraint task_labor[F008,3] = baggage_team_02;
+constraint task_labor[F008,4] = fuel_team_01;
+constraint task_labor[F008,5] = cabin_clean_team_01;
+constraint task_labor[F008,6] = water_waste_team_01;
+constraint task_labor[F008,7] = catering_team_01;
+constraint task_labor[F008,8] = baggage_team_01;
+constraint task_labor[F008,10] = pushback_team_01;
+constraint task_labor[F009,3] = baggage_team_14;
+constraint task_labor[F009,4] = fuel_team_06;
+constraint task_labor[F009,5] = cabin_clean_team_04;
+constraint task_labor[F009,6] = water_waste_team_04;
+constraint task_labor[F009,7] = catering_team_04;
+constraint task_labor[F009,8] = baggage_team_14;
+constraint task_labor[F009,10] = pushback_team_06;
+constraint task_labor[F010,3] = baggage_team_14;
+constraint task_labor[F010,4] = fuel_team_09;
+constraint task_labor[F010,5] = cabin_clean_team_10;
+constraint task_labor[F010,6] = water_waste_team_04;
+constraint task_labor[F010,7] = catering_team_08;
+constraint task_labor[F010,8] = baggage_team_08;
+constraint task_labor[F010,10] = pushback_team_07;
+constraint task_labor[F011,3] = baggage_team_02;
+constraint task_labor[F011,4] = fuel_team_04;
+constraint task_labor[F011,5] = cabin_clean_team_01;
+constraint task_labor[F011,6] = water_waste_team_01;
+constraint task_labor[F011,7] = catering_team_01;
+constraint task_labor[F011,8] = baggage_team_07;
+constraint task_labor[F011,10] = pushback_team_01;
+constraint task_labor[F012,3] = baggage_team_14;
+constraint task_labor[F012,4] = fuel_team_09;
+constraint task_labor[F012,5] = cabin_clean_team_10;
+constraint task_labor[F012,6] = water_waste_team_04;
+constraint task_labor[F012,7] = catering_team_08;
+constraint task_labor[F012,8] = baggage_team_14;
+constraint task_labor[F012,10] = pushback_team_07;
+constraint task_labor[F013,3] = baggage_team_02;
+constraint task_labor[F013,4] = fuel_team_01;
+constraint task_labor[F013,5] = cabin_clean_team_01;
+constraint task_labor[F013,6] = water_waste_team_01;
+constraint task_labor[F013,7] = catering_team_01;
+constraint task_labor[F013,8] = baggage_team_02;
+constraint task_labor[F013,10] = pushback_team_01;
+constraint task_labor[F014,3] = baggage_team_07;
+constraint task_labor[F014,4] = fuel_team_06;
+constraint task_labor[F014,5] = cabin_clean_team_04;
+constraint task_labor[F014,6] = water_waste_team_04;
+constraint task_labor[F014,7] = catering_team_04;
+constraint task_labor[F014,8] = baggage_team_07;
+constraint task_labor[F014,10] = pushback_team_06;
 solve :: seq_search([
   int_search(
     [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],

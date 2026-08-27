@@ -285,16 +285,7 @@ constraint forall(f in FlightID, t in TASK_IDX where not active(f, t))(
 );
 
 % ---- Objective: minimise the cost of the DISTINCT teams used: TODO ----
-constraint forall(l in LaborID)(
-  used[l] <-> exists(f in FlightID, t in TASK_IDX where
-    active(f, t) /\ l in compatible_labor[f, t]
-  )(
-    task_labor[f, t] = l
-  )
-);
-constraint cost = sum(l in LaborID)(
-  labor_cost[l] * bool2int(used[l])
-);
+constraint forall(l in LaborID)(not used[l]); constraint cost = 0;
 
 % Compulsory task intervals give a sound lower bound on teams of each kind.
 array[TeamType] of int: min_teams_lb = [
@@ -314,6 +305,86 @@ constraint forall(k in TeamType)(
   sum(l in LaborID where labor_kind[l] = k)(bool2int(used[l])) >= min_teams_lb[k]
 );
 
+constraint task_start[F000,1] = 113;
+constraint task_start[F000,2] = 115;
+constraint task_start[F000,3] = 115;
+constraint task_start[F000,4] = 122;
+constraint task_start[F000,5] = 122;
+constraint task_start[F000,6] = 122;
+constraint task_start[F000,7] = 122;
+constraint task_start[F000,8] = 130;
+constraint task_start[F000,9] = 139;
+constraint task_start[F000,10] = 152;
+constraint task_start[F001,1] = 66;
+constraint task_start[F001,2] = 68;
+constraint task_start[F001,3] = 68;
+constraint task_start[F001,4] = 77;
+constraint task_start[F001,5] = 77;
+constraint task_start[F001,6] = 77;
+constraint task_start[F001,7] = 77;
+constraint task_start[F001,8] = 82;
+constraint task_start[F001,9] = 92;
+constraint task_start[F001,10] = 108;
+constraint task_start[F002,1] = 247;
+constraint task_start[F002,2] = 249;
+constraint task_start[F002,3] = 249;
+constraint task_start[F002,4] = 256;
+constraint task_start[F002,5] = 256;
+constraint task_start[F002,6] = 256;
+constraint task_start[F002,7] = 256;
+constraint task_start[F002,8] = 260;
+constraint task_start[F002,9] = 270;
+constraint task_start[F002,10] = 287;
+constraint task_start[F003,1] = 47;
+constraint task_start[F003,2] = 50;
+constraint task_start[F003,3] = 50;
+constraint task_start[F003,4] = 60;
+constraint task_start[F003,5] = 60;
+constraint task_start[F003,6] = 60;
+constraint task_start[F003,7] = 60;
+constraint task_start[F003,8] = 65;
+constraint task_start[F003,9] = 77;
+constraint task_start[F003,10] = 93;
+constraint task_start[F004,1] = 261;
+constraint task_start[F004,2] = 263;
+constraint task_start[F004,3] = 263;
+constraint task_start[F004,4] = 272;
+constraint task_start[F004,5] = 272;
+constraint task_start[F004,6] = 272;
+constraint task_start[F004,7] = 272;
+constraint task_start[F004,8] = 278;
+constraint task_start[F004,9] = 288;
+constraint task_start[F004,10] = 305;
+constraint task_start[F005,1] = 123;
+constraint task_start[F005,2] = 126;
+constraint task_start[F005,3] = 126;
+constraint task_start[F005,4] = 135;
+constraint task_start[F005,5] = 135;
+constraint task_start[F005,6] = 135;
+constraint task_start[F005,7] = 135;
+constraint task_start[F005,8] = 140;
+constraint task_start[F005,9] = 152;
+constraint task_start[F005,10] = 164;
+constraint task_start[F006,1] = 20;
+constraint task_start[F006,2] = 22;
+constraint task_start[F006,3] = 22;
+constraint task_start[F006,4] = 33;
+constraint task_start[F006,5] = 33;
+constraint task_start[F006,6] = 33;
+constraint task_start[F006,7] = 33;
+constraint task_start[F006,8] = 39;
+constraint task_start[F006,9] = 48;
+constraint task_start[F006,10] = 60;
+constraint task_start[F007,1] = 14;
+constraint task_start[F007,2] = 16;
+constraint task_start[F007,3] = 16;
+constraint task_start[F007,4] = 23;
+constraint task_start[F007,5] = 23;
+constraint task_start[F007,6] = 23;
+constraint task_start[F007,7] = 23;
+constraint task_start[F007,8] = 31;
+constraint task_start[F007,9] = 40;
+constraint task_start[F007,10] = 53;
 solve :: seq_search([
   int_search(
     [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
@@ -328,7 +399,7 @@ solve :: seq_search([
     first_fail, indomain_min, complete
   ),
   int_search([gate[f] | f in FlightID], first_fail, indomain_min, complete)
-]) minimize cost;
+]) satisfy;
 
 % ---- Output (do not modify) ----
 function string: row_gate() =

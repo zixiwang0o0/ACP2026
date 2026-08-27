@@ -328,7 +328,7 @@ solve :: seq_search([
     first_fail, indomain_min, complete
   ),
   int_search([gate[f] | f in FlightID], first_fail, indomain_min, complete)
-]) minimize cost;
+]) satisfy;
 
 % ---- Output (do not modify) ----
 function string: row_gate() =

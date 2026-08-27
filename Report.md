@@ -13,3 +13,5 @@
 
 [airport_sched.mzn](D:/desktop/test/airport_sched.mzn)：增加必占区间下界、廉价团队优先的成本支配约束。
 [solve_portfolio.ps1](D:/desktop/test/solve_portfolio.ps1)：并行运行 Chuffed、Gecode、CP-SAT，保存最低有效成本；全部失败时保留原文件。
+
+这个b AI 为什么不能一步优化到位

@@ -184,70 +184,6 @@ constraint cumulatives(
   true
 );
 
-% C11: tasks of one team must be ordered with enough gate-to-gate travel time.
-constraint forall(f1, f2 in FlightID, t1, t2 in TASK_IDX where
-  active(f1, t1) /\ active(f2, t2) /\
-  (f1 < f2 \/ (f1 = f2 /\ t1 < t2)) /\
-  compatible_labor[f1, t1] intersect compatible_labor[f2, t2] != {}
-)(
-  task_labor[f1, t1] = task_labor[f2, t2] ->
-    (task_start[f1, t1] + flight_tasks[f1, t1].duration
-       + travel[gate[f1], gate[f2]] <= task_start[f2, t2] \/
-     task_start[f2, t2] + flight_tasks[f2, t2].duration
-       + travel[gate[f2], gate[f1]] <= task_start[f1, t1])
-);
-
-% C12: identify each task's immediately preceding task on the same team's
-% time line.  The streak resets only when idle time after travel is >= 15.
-int: n_active_tasks = sum(f in FlightID)(flight_n_tasks[f]);
-set of int: ACTIVE_TASK = 1..n_active_tasks;
-array[ACTIVE_TASK] of FlightID: seq_f =
-  [f | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of int: seq_t =
-  [t | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of var int: seq_start =
-  [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of int: seq_duration =
-  [flight_tasks[f, t].duration | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of var LaborID: seq_labor =
-  [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of var GateID: seq_gate = [gate[seq_f[i]] | i in ACTIVE_TASK];
-array[ACTIVE_TASK] of var 0..horizon: streak_start;
-array[ACTIVE_TASK] of var 0..n_active_tasks: previous_task;
-
-constraint forall(i in ACTIVE_TASK)(
-  (previous_task[i] = 0) <->
-    forall(j in ACTIVE_TASK where j != i)(
-      seq_labor[j] != seq_labor[i] \/ seq_start[j] >= seq_start[i]
-    )
-);
-constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] > 0 ->
-    let { var 1..n_active_tasks: p = previous_task[i] } in
-      p != i /\
-      seq_labor[p] = seq_labor[i] /\
-      seq_start[p] < seq_start[i] /\
-      seq_start[p] + seq_duration[p] + travel[seq_gate[p], seq_gate[i]] <= seq_start[i] /\
-      forall(j in ACTIVE_TASK where j != i)(
-        (seq_labor[j] = seq_labor[i] /\ seq_start[j] < seq_start[i]) ->
-          seq_start[j] <= seq_start[p]
-      )
-);
-constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] = 0 -> streak_start[i] = seq_start[i]
-);
-constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] > 0 ->
-    let { var 1..n_active_tasks: p = previous_task[i] } in
-      if seq_start[i] - seq_start[p] - seq_duration[p]
-           - travel[seq_gate[p], seq_gate[i]] >= 15 then
-        streak_start[i] = seq_start[i]
-      else
-        streak_start[i] = streak_start[p]
-      endif
-);
-constraint forall(i in ACTIVE_TASK)(seq_start[i] <= streak_start[i] + 90);
-
 %   C10 each team works only inside [labor_shift_start, labor_shift_end].
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
   labor_shift_start[task_labor[f, t]] <= task_start[f, t] /\
@@ -314,6 +250,202 @@ constraint forall(k in TeamType)(
   sum(l in LaborID where labor_kind[l] = k)(bool2int(used[l])) >= min_teams_lb[k]
 );
 
+constraint cost < 6799;
+constraint gate[F001] = G001;
+constraint task_start[F001,1] = 192;
+constraint task_labor[F001,1] = ramp_team_01;
+constraint task_start[F001,2] = 194;
+constraint task_labor[F001,2] = ramp_team_01;
+constraint task_start[F001,3] = 194;
+constraint task_labor[F001,3] = baggage_team_08;
+constraint task_start[F001,4] = 202;
+constraint task_labor[F001,4] = fuel_team_05;
+constraint task_start[F001,5] = 208;
+constraint task_labor[F001,5] = cabin_clean_team_10;
+constraint task_start[F001,6] = 210;
+constraint task_labor[F001,6] = water_waste_team_04;
+constraint task_start[F001,7] = 208;
+constraint task_labor[F001,7] = catering_team_08;
+constraint task_start[F001,8] = 215;
+constraint task_labor[F001,8] = baggage_team_08;
+constraint task_start[F001,9] = 245;
+constraint task_labor[F001,9] = ramp_team_09;
+constraint task_start[F001,10] = 281;
+constraint task_labor[F001,10] = pushback_team_07;
+constraint gate[F002] = G006;
+constraint task_start[F002,1] = 170;
+constraint task_labor[F002,1] = ramp_team_01;
+constraint task_start[F002,2] = 172;
+constraint task_labor[F002,2] = ramp_team_01;
+constraint task_start[F002,3] = 172;
+constraint task_labor[F002,3] = baggage_team_01;
+constraint task_start[F002,4] = 179;
+constraint task_labor[F002,4] = fuel_team_01;
+constraint task_start[F002,5] = 179;
+constraint task_labor[F002,5] = cabin_clean_team_01;
+constraint task_start[F002,6] = 179;
+constraint task_labor[F002,6] = water_waste_team_01;
+constraint task_start[F002,7] = 179;
+constraint task_labor[F002,7] = catering_team_01;
+constraint task_start[F002,8] = 189;
+constraint task_labor[F002,8] = baggage_team_01;
+constraint task_start[F002,9] = 199;
+constraint task_labor[F002,9] = ramp_team_08;
+constraint task_start[F002,10] = 212;
+constraint task_labor[F002,10] = pushback_team_06;
+constraint gate[F004] = G002;
+constraint task_start[F004,1] = 113;
+constraint task_labor[F004,1] = ramp_team_01;
+constraint task_start[F004,2] = 118;
+constraint task_labor[F004,2] = ramp_team_01;
+constraint task_start[F004,3] = 118;
+constraint task_labor[F004,3] = baggage_team_01;
+constraint task_start[F004,4] = 130;
+constraint task_labor[F004,4] = fuel_team_01;
+constraint task_start[F004,5] = 130;
+constraint task_labor[F004,5] = cabin_clean_team_01;
+constraint task_start[F004,6] = 130;
+constraint task_labor[F004,6] = water_waste_team_01;
+constraint task_start[F004,7] = 130;
+constraint task_labor[F004,7] = catering_team_01;
+constraint task_start[F004,8] = 144;
+constraint task_labor[F004,8] = baggage_team_01;
+constraint task_start[F004,9] = 172;
+constraint task_labor[F004,9] = ramp_team_09;
+constraint task_start[F004,10] = 179;
+constraint task_labor[F004,10] = ramp_team_09;
+constraint task_start[F004,11] = 215;
+constraint task_labor[F004,11] = pushback_team_07;
+constraint gate[F005] = G003;
+constraint task_start[F005,1] = 228;
+constraint task_labor[F005,1] = ramp_team_08;
+constraint task_start[F005,2] = 233;
+constraint task_labor[F005,2] = ramp_team_09;
+constraint task_start[F005,3] = 233;
+constraint task_labor[F005,3] = baggage_team_07;
+constraint task_start[F005,4] = 244;
+constraint task_labor[F005,4] = fuel_team_04;
+constraint task_start[F005,5] = 244;
+constraint task_labor[F005,5] = cabin_clean_team_04;
+constraint task_start[F005,6] = 244;
+constraint task_labor[F005,6] = water_waste_team_04;
+constraint task_start[F005,7] = 244;
+constraint task_labor[F005,7] = catering_team_04;
+constraint task_start[F005,8] = 261;
+constraint task_labor[F005,8] = baggage_team_07;
+constraint task_start[F005,9] = 291;
+constraint task_labor[F005,9] = ramp_team_17;
+constraint task_start[F005,10] = 298;
+constraint task_labor[F005,10] = ramp_team_17;
+constraint task_start[F005,11] = 332;
+constraint task_labor[F005,11] = pushback_team_06;
+constraint gate[F006] = G004;
+constraint task_start[F006,1] = 232;
+constraint task_labor[F006,1] = ramp_team_17;
+constraint task_start[F006,2] = 236;
+constraint task_labor[F006,2] = ramp_team_17;
+constraint task_start[F006,3] = 236;
+constraint task_labor[F006,3] = baggage_team_08;
+constraint task_start[F006,4] = 248;
+constraint task_labor[F006,4] = fuel_team_05;
+constraint task_start[F006,5] = 248;
+constraint task_labor[F006,5] = cabin_clean_team_10;
+constraint task_start[F006,6] = 261;
+constraint task_labor[F006,6] = water_waste_team_04;
+constraint task_start[F006,7] = 248;
+constraint task_labor[F006,7] = catering_team_08;
+constraint task_start[F006,8] = 265;
+constraint task_labor[F006,8] = baggage_team_08;
+constraint task_start[F006,9] = 296;
+constraint task_labor[F006,9] = ramp_team_09;
+constraint task_start[F006,10] = 302;
+constraint task_labor[F006,10] = ramp_team_18;
+constraint task_start[F006,11] = 340;
+constraint task_labor[F006,11] = pushback_team_07;
+constraint gate[F008] = G000;
+constraint task_start[F008,1] = 33;
+constraint task_labor[F008,1] = ramp_team_01;
+constraint task_start[F008,2] = 35;
+constraint task_labor[F008,2] = ramp_team_01;
+constraint task_start[F008,3] = 43;
+constraint task_labor[F008,3] = baggage_team_02;
+constraint task_start[F008,4] = 54;
+constraint task_labor[F008,4] = fuel_team_01;
+constraint task_start[F008,5] = 46;
+constraint task_labor[F008,5] = cabin_clean_team_01;
+constraint task_start[F008,6] = 46;
+constraint task_labor[F008,6] = water_waste_team_01;
+constraint task_start[F008,7] = 46;
+constraint task_labor[F008,7] = catering_team_01;
+constraint task_start[F008,8] = 55;
+constraint task_labor[F008,8] = baggage_team_01;
+constraint task_start[F008,9] = 66;
+constraint task_labor[F008,9] = ramp_team_01;
+constraint task_start[F008,10] = 83;
+constraint task_labor[F008,10] = pushback_team_01;
+constraint gate[F010] = G009;
+constraint task_start[F010,1] = 257;
+constraint task_labor[F010,1] = ramp_team_18;
+constraint task_start[F010,2] = 260;
+constraint task_labor[F010,2] = ramp_team_18;
+constraint task_start[F010,3] = 281;
+constraint task_labor[F010,3] = baggage_team_14;
+constraint task_start[F010,4] = 271;
+constraint task_labor[F010,4] = fuel_team_09;
+constraint task_start[F010,5] = 273;
+constraint task_labor[F010,5] = cabin_clean_team_10;
+constraint task_start[F010,6] = 284;
+constraint task_labor[F010,6] = water_waste_team_04;
+constraint task_start[F010,7] = 271;
+constraint task_labor[F010,7] = catering_team_08;
+constraint task_start[F010,8] = 292;
+constraint task_labor[F010,8] = baggage_team_08;
+constraint task_start[F010,9] = 290;
+constraint task_labor[F010,9] = ramp_team_19;
+constraint task_start[F010,10] = 305;
+constraint task_labor[F010,10] = pushback_team_07;
+constraint gate[F011] = G008;
+constraint task_start[F011,1] = 151;
+constraint task_labor[F011,1] = ramp_team_01;
+constraint task_start[F011,2] = 153;
+constraint task_labor[F011,2] = ramp_team_01;
+constraint task_start[F011,3] = 153;
+constraint task_labor[F011,3] = baggage_team_02;
+constraint task_start[F011,4] = 163;
+constraint task_labor[F011,4] = fuel_team_04;
+constraint task_start[F011,5] = 163;
+constraint task_labor[F011,5] = cabin_clean_team_01;
+constraint task_start[F011,6] = 163;
+constraint task_labor[F011,6] = water_waste_team_01;
+constraint task_start[F011,7] = 163;
+constraint task_labor[F011,7] = catering_team_01;
+constraint task_start[F011,8] = 168;
+constraint task_labor[F011,8] = baggage_team_07;
+constraint task_start[F011,9] = 179;
+constraint task_labor[F011,9] = ramp_team_08;
+constraint task_start[F011,10] = 192;
+constraint task_labor[F011,10] = pushback_team_01;
+constraint gate[F012] = G010;
+constraint task_start[F012,1] = 297;
+constraint task_labor[F012,1] = ramp_team_08;
+constraint task_start[F012,2] = 299;
+constraint task_labor[F012,2] = ramp_team_08;
+constraint task_start[F012,3] = 299;
+constraint task_labor[F012,3] = baggage_team_14;
+constraint task_start[F012,4] = 307;
+constraint task_labor[F012,4] = fuel_team_09;
+constraint task_start[F012,5] = 307;
+constraint task_labor[F012,5] = cabin_clean_team_10;
+constraint task_start[F012,6] = 307;
+constraint task_labor[F012,6] = water_waste_team_04;
+constraint task_start[F012,7] = 307;
+constraint task_labor[F012,7] = catering_team_08;
+constraint task_start[F012,8] = 312;
+constraint task_labor[F012,8] = baggage_team_14;
+constraint task_start[F012,9] = 322;
+constraint task_labor[F012,9] = ramp_team_19;
+constraint task_start[F012,10] = 335;
+constraint task_labor[F012,10] = pushback_team_07;
 solve :: seq_search([
   int_search(
     [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],

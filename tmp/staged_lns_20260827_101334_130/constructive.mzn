@@ -1,0 +1,2156 @@
+% =============================================================================
+% ACP Summer School 2026: Melbourne Airport Ground Operations
+% MiniZinc CP starter (SKELETON -- fill in the C1..C12 constraint blocks).
+%
+% Run it with an instance JSON as the data file. Use the two flags below to
+% suppress MiniZinc's solution separators so the output is a single clean JSON:
+%     minizinc --soln-sep "" --search-complete-msg "" airport_sched.mzn data/hackathon_03.json > sol_03.json
+% For the larger instances use OR-Tools CP-SAT with intermediate solutions:
+%     minizinc --solver cp-sat -i --time-limit 300000 airport_sched.mzn data/hackathon_03.json
+% MiniZinc reads the instance JSON directly: its top-level keys map to the parameters below.
+%
+% Output JSON contract (consumed by the grader):
+%   { "gate":       ["<GateID>", ...],                        (FlightID)
+%     "task_start": [[int, ...], ...],                        (FlightID x max_tasks)
+%     "task_labor": [["<LaborID>", ...], ...],                (FlightID x max_tasks)
+%     "cost":       int }
+% This skeleton already declares the decision variables, prints the exact
+% contract. You job is to ADD C1..C12 and minimise the true team cost.
+% =============================================================================
+
+include "globals.mzn";
+
+% ---- Model-level enums (fixed across all instances) ----
+enum Carrier   = { domestic, international };
+enum Size      = { narrow, wide };
+enum OpType    = { passenger, freighter };
+enum StandSize = { small, large };
+
+enum TeamType  = { ramp_team, baggage_team, fuel_team, catering_team,
+                   cabin_clean_team, water_waste_team, pushback_team };
+
+enum TaskType  = { ARRIVE_SECURE, DISEMBARK, BAG_UNLOAD, FUEL, CABIN_CLEAN,
+                   WATER_LAV,     CATERING,  BAG_LOAD,   INTL_DOCS,
+                   BOARDING,      PUSHBACK,
+                   CARGO_UNLOAD,  CARGO_LOAD, DEP_RELEASE };
+
+% Task precedence graph (fixed): a task may only start once all its preds finished.
+array[TaskType] of set of TaskType: required_preds = [
+  ARRIVE_SECURE: {},
+  DISEMBARK:     {ARRIVE_SECURE},
+  BAG_UNLOAD:    {ARRIVE_SECURE},
+  FUEL:          {DISEMBARK, CARGO_UNLOAD},
+  CABIN_CLEAN:   {DISEMBARK},
+  WATER_LAV:     {DISEMBARK},
+  CATERING:      {DISEMBARK},
+  BAG_LOAD:      {BAG_UNLOAD},
+  INTL_DOCS:     {CABIN_CLEAN, CATERING, FUEL, WATER_LAV},
+  BOARDING:      {CABIN_CLEAN, CATERING, FUEL, WATER_LAV, INTL_DOCS},
+  PUSHBACK:      {BOARDING, BAG_LOAD},
+  CARGO_UNLOAD:  {},
+  CARGO_LOAD:    {CARGO_UNLOAD},
+  DEP_RELEASE:   {CARGO_LOAD, FUEL}
+];
+
+% The single team kind each task requires (fixed across all instances).
+array[TaskType] of TeamType: required_team = [
+  ARRIVE_SECURE: ramp_team,        DISEMBARK:  ramp_team,
+  BAG_UNLOAD:    baggage_team,     FUEL:       fuel_team,
+  CABIN_CLEAN:   cabin_clean_team, WATER_LAV:  water_waste_team,
+  CATERING:      catering_team,    BAG_LOAD:   baggage_team,
+  INTL_DOCS:     ramp_team,        BOARDING:   ramp_team,
+  PUSHBACK:      pushback_team,
+  CARGO_UNLOAD:  baggage_team,     CARGO_LOAD: baggage_team,
+  DEP_RELEASE:   pushback_team
+];
+
+% ---- Per-instance data (loaded from the instance JSON) ----
+enum FlightID;
+enum GateID;
+enum LaborID;
+
+int: horizon;
+int: max_tasks;
+set of int: TASK_IDX = 1..max_tasks;
+
+% ---- Per-flight data ----
+array[FlightID] of int: flight_arr; 
+array[FlightID] of int: flight_dep; 
+array[FlightID] of Carrier: flight_carrier;
+array[FlightID] of Size: flight_size;
+array[FlightID] of OpType: flight_op_type;
+array[FlightID] of int: flight_n_tasks;
+array[FlightID, TASK_IDX] of record(
+  TaskType: kind,
+  int: duration,
+): flight_tasks;
+
+% ---- Per-gate data ----
+array[GateID] of StandSize: gate_stand_size;
+array[GateID] of Carrier: gate_usage;
+array[GateID] of OpType: gate_op_type;
+array[GateID] of int: gate_open;
+array[GateID] of int: gate_close;
+
+% ---- Per-labor (team) data ----
+array[LaborID] of TeamType: labor_kind;
+array[LaborID] of int: labor_cost;
+array[LaborID] of int: labor_shift_start;
+array[LaborID] of int: labor_shift_end;
+
+% ---- Per-gate travel data ----
+array[GateID, GateID] of int: travel;
+
+% Fixed constants.
+int: min_gate_gap    = 30;      % C5: minimum inter-turn gap on a shared gate
+int: max_work_streak = 90;      % C12: work streak after which a rest is required
+int: rest_duration   = 15;      % C12: minimum rest gap
+
+% ---- A test on whether a task index is active for a flight or not ----
+function bool: active(FlightID: f, int: t) = t <= flight_n_tasks[f];
+
+% ---- Decision variables ----
+array[FlightID] of var GateID: gate;
+array[FlightID, TASK_IDX] of var 0..horizon: task_start;
+array[FlightID, TASK_IDX] of var LaborID: task_labor;
+array[LaborID] of var bool: used;
+var int: cost;
+
+% ---- Constraints ----  (add yours here; see hackathon.pdf for the full text)
+% Tier 1: precompute gates satisfying C1-C4 to shrink gate domains.
+array[FlightID] of set of GateID: compatible_gates = [
+  { g | g in GateID where
+      gate_open[g] <= flight_arr[f] /\
+      flight_dep[f] <= gate_close[g] /\
+      (flight_size[f] = narrow \/ gate_stand_size[g] = large) /\
+      gate_op_type[g] = flight_op_type[f] /\
+      gate_usage[g] = flight_carrier[f]
+  }
+  | f in FlightID
+];
+constraint forall(f in FlightID)(gate[f] in compatible_gates[f]);
+
+% C5: only statically conflicting flight pairs need a constraint.
+constraint forall(f1, f2 in FlightID where
+  f1 < f2 /\
+  flight_dep[f1] + min_gate_gap > flight_arr[f2] /\
+  flight_dep[f2] + min_gate_gap > flight_arr[f1]
+)(
+  gate[f1] != gate[f2]
+);
+
+% Tier 2 (crew scheduling, C6-C10): TODO
+%   C6 the team assigned to a task is of kind required_team[flight_tasks[f,t].kind];
+array[FlightID, TASK_IDX] of set of LaborID: compatible_labor =
+  array2d(FlightID, TASK_IDX, [
+    if active(f, t) then
+      { l | l in LaborID where
+          labor_kind[l] = required_team[flight_tasks[f, t].kind] /\
+          max(flight_arr[f], labor_shift_start[l]) + flight_tasks[f, t].duration
+            <= min(flight_dep[f], labor_shift_end[l])
+      }
+    else
+      { min(LaborID) }
+    endif
+    | f in FlightID, t in TASK_IDX
+  ]);
+constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
+  task_labor[f, t] in compatible_labor[f, t]
+);
+
+%   C7 each task runs inside its flight's [flight_arr, flight_dep] window;
+constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
+  flight_arr[f] <= task_start[f, t] /\
+  task_start[f, t] + flight_tasks[f, t].duration <= flight_dep[f]
+);
+
+%   C8 precedence: a task starts only once all its required_preds finished;
+constraint forall(f in FlightID, pred, succ in TASK_IDX where
+  active(f, pred) /\ active(f, succ) /\
+  flight_tasks[f, pred].kind in required_preds[flight_tasks[f, succ].kind]
+)(
+  task_start[f, pred] + flight_tasks[f, pred].duration <= task_start[f, succ]
+);
+
+%   C9 each LaborID is a unit-capacity machine.  The global form avoids the
+%   quadratic number of pairwise disjunctions on large instances.
+array[LaborID] of int: labor_capacity = [1 | l in LaborID];
+constraint cumulatives(
+  [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+  [flight_tasks[f, t].duration | f in FlightID, t in TASK_IDX where active(f, t)],
+  [1 | f in FlightID, t in TASK_IDX where active(f, t)],
+  [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+  labor_capacity,
+  true
+);
+
+%   C10 each team works only inside [labor_shift_start, labor_shift_end].
+constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
+  labor_shift_start[task_labor[f, t]] <= task_start[f, t] /\
+  task_start[f, t] + flight_tasks[f, t].duration
+    <= labor_shift_end[task_labor[f, t]]
+);
+
+% Eliminate permutations among teams with identical kind, shift and cost.
+constraint forall(rep in LaborID where
+  rep = min({ l | l in LaborID where
+    labor_kind[l] = labor_kind[rep] /\
+    labor_cost[l] = labor_cost[rep] /\
+    labor_shift_start[l] = labor_shift_start[rep] /\
+    labor_shift_end[l] = labor_shift_end[rep]
+  })
+)(
+  value_precede_chain(
+    [l | l in LaborID where
+      labor_kind[l] = labor_kind[rep] /\
+      labor_cost[l] = labor_cost[rep] /\
+      labor_shift_start[l] = labor_shift_start[rep] /\
+      labor_shift_end[l] = labor_shift_end[rep]
+    ],
+    [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)]
+  )
+);
+
+% Tier 3 (routing + rest, C11-C12): TODO
+%   C11 two consecutive tasks of one team at gates g1,g2 need travel[g1,g2] minutes between them;
+%   C12 a team needs a >= 15-min rest once its work has spanned > 90 minutes.
+
+% Redundant constraint: pin padding tasks so their output is fixed. (do not modify)
+constraint forall(f in FlightID, t in TASK_IDX where not active(f, t))(
+  task_start[f, t] = 0 /\ task_labor[f, t] = min(LaborID)
+);
+
+% ---- Objective: minimise the cost of the DISTINCT teams used: TODO ----
+constraint forall(l in LaborID)(not used[l]); constraint cost = 0;
+
+% Compulsory task intervals give a sound lower bound on teams of each kind.
+array[TeamType] of int: min_teams_lb = [
+  max(time in 0..horizon)(
+    sum(f in FlightID, t in TASK_IDX where
+      active(f, t) /\ required_team[flight_tasks[f, t].kind] = k
+    )(
+      bool2int(
+        flight_dep[f] - flight_tasks[f, t].duration < time /\
+        time < flight_arr[f] + flight_tasks[f, t].duration
+      )
+    )
+  )
+  | k in TeamType
+];
+constraint forall(k in TeamType)(
+  sum(l in LaborID where labor_kind[l] = k)(bool2int(used[l])) >= min_teams_lb[k]
+);
+
+constraint task_start[F0000,1] = 0;
+constraint task_start[F0000,2] = 4;
+constraint task_start[F0000,3] = 4;
+constraint task_start[F0000,4] = 16;
+constraint task_start[F0000,5] = 16;
+constraint task_start[F0000,6] = 16;
+constraint task_start[F0000,7] = 16;
+constraint task_start[F0000,8] = 29;
+constraint task_start[F0000,9] = 62;
+constraint task_start[F0000,10] = 70;
+constraint task_start[F0000,11] = 105;
+constraint task_start[F0001,1] = 0;
+constraint task_start[F0001,2] = 2;
+constraint task_start[F0001,3] = 2;
+constraint task_start[F0001,4] = 10;
+constraint task_start[F0001,5] = 10;
+constraint task_start[F0001,6] = 10;
+constraint task_start[F0001,7] = 10;
+constraint task_start[F0001,8] = 16;
+constraint task_start[F0001,9] = 26;
+constraint task_start[F0001,10] = 40;
+constraint task_start[F0002,1] = 4;
+constraint task_start[F0002,2] = 6;
+constraint task_start[F0002,3] = 6;
+constraint task_start[F0002,4] = 16;
+constraint task_start[F0002,5] = 16;
+constraint task_start[F0002,6] = 16;
+constraint task_start[F0002,7] = 16;
+constraint task_start[F0002,8] = 21;
+constraint task_start[F0002,9] = 33;
+constraint task_start[F0002,10] = 47;
+constraint task_start[F0003,1] = 3;
+constraint task_start[F0003,2] = 5;
+constraint task_start[F0003,3] = 5;
+constraint task_start[F0003,4] = 15;
+constraint task_start[F0003,5] = 15;
+constraint task_start[F0003,6] = 15;
+constraint task_start[F0003,7] = 15;
+constraint task_start[F0003,8] = 17;
+constraint task_start[F0003,9] = 32;
+constraint task_start[F0003,10] = 45;
+constraint task_start[F0004,1] = 1;
+constraint task_start[F0004,2] = 3;
+constraint task_start[F0004,3] = 3;
+constraint task_start[F0004,4] = 12;
+constraint task_start[F0004,5] = 12;
+constraint task_start[F0004,6] = 12;
+constraint task_start[F0004,7] = 12;
+constraint task_start[F0004,8] = 15;
+constraint task_start[F0004,9] = 28;
+constraint task_start[F0004,10] = 43;
+constraint task_start[F0005,1] = 1;
+constraint task_start[F0005,2] = 4;
+constraint task_start[F0005,3] = 4;
+constraint task_start[F0005,4] = 13;
+constraint task_start[F0005,5] = 13;
+constraint task_start[F0005,6] = 13;
+constraint task_start[F0005,7] = 13;
+constraint task_start[F0005,8] = 20;
+constraint task_start[F0005,9] = 29;
+constraint task_start[F0005,10] = 44;
+constraint task_start[F0006,1] = 1;
+constraint task_start[F0006,2] = 3;
+constraint task_start[F0006,3] = 3;
+constraint task_start[F0006,4] = 10;
+constraint task_start[F0006,5] = 10;
+constraint task_start[F0006,6] = 10;
+constraint task_start[F0006,7] = 10;
+constraint task_start[F0006,8] = 14;
+constraint task_start[F0006,9] = 26;
+constraint task_start[F0006,10] = 38;
+constraint task_start[F0007,1] = 0;
+constraint task_start[F0007,2] = 2;
+constraint task_start[F0007,3] = 2;
+constraint task_start[F0007,4] = 10;
+constraint task_start[F0007,5] = 10;
+constraint task_start[F0007,6] = 10;
+constraint task_start[F0007,7] = 10;
+constraint task_start[F0007,8] = 18;
+constraint task_start[F0007,9] = 26;
+constraint task_start[F0007,10] = 39;
+constraint task_start[F0008,1] = 0;
+constraint task_start[F0008,2] = 2;
+constraint task_start[F0008,3] = 2;
+constraint task_start[F0008,4] = 9;
+constraint task_start[F0008,5] = 9;
+constraint task_start[F0008,6] = 9;
+constraint task_start[F0008,7] = 9;
+constraint task_start[F0008,8] = 18;
+constraint task_start[F0008,9] = 25;
+constraint task_start[F0008,10] = 37;
+constraint task_start[F0009,1] = 0;
+constraint task_start[F0009,2] = 2;
+constraint task_start[F0009,3] = 2;
+constraint task_start[F0009,4] = 8;
+constraint task_start[F0009,5] = 8;
+constraint task_start[F0009,6] = 8;
+constraint task_start[F0009,7] = 8;
+constraint task_start[F0009,8] = 22;
+constraint task_start[F0009,9] = 53;
+constraint task_start[F0009,10] = 88;
+constraint task_start[F0010,1] = 19;
+constraint task_start[F0010,2] = 22;
+constraint task_start[F0010,3] = 22;
+constraint task_start[F0010,4] = 32;
+constraint task_start[F0010,5] = 32;
+constraint task_start[F0010,6] = 32;
+constraint task_start[F0010,7] = 32;
+constraint task_start[F0010,8] = 34;
+constraint task_start[F0010,9] = 48;
+constraint task_start[F0010,10] = 65;
+constraint task_start[F0011,1] = 19;
+constraint task_start[F0011,2] = 39;
+constraint task_start[F0011,3] = 39;
+constraint task_start[F0011,4] = 59;
+constraint task_start[F0012,1] = 15;
+constraint task_start[F0012,2] = 17;
+constraint task_start[F0012,3] = 17;
+constraint task_start[F0012,4] = 25;
+constraint task_start[F0012,5] = 25;
+constraint task_start[F0012,6] = 25;
+constraint task_start[F0012,7] = 25;
+constraint task_start[F0012,8] = 31;
+constraint task_start[F0012,9] = 40;
+constraint task_start[F0012,10] = 52;
+constraint task_start[F0013,1] = 19;
+constraint task_start[F0013,2] = 22;
+constraint task_start[F0013,3] = 22;
+constraint task_start[F0013,4] = 30;
+constraint task_start[F0013,5] = 30;
+constraint task_start[F0013,6] = 30;
+constraint task_start[F0013,7] = 30;
+constraint task_start[F0013,8] = 37;
+constraint task_start[F0013,9] = 47;
+constraint task_start[F0013,10] = 64;
+constraint task_start[F0014,1] = 19;
+constraint task_start[F0014,2] = 22;
+constraint task_start[F0014,3] = 22;
+constraint task_start[F0014,4] = 30;
+constraint task_start[F0014,5] = 30;
+constraint task_start[F0014,6] = 30;
+constraint task_start[F0014,7] = 30;
+constraint task_start[F0014,8] = 37;
+constraint task_start[F0014,9] = 47;
+constraint task_start[F0014,10] = 59;
+constraint task_start[F0015,1] = 18;
+constraint task_start[F0015,2] = 21;
+constraint task_start[F0015,3] = 21;
+constraint task_start[F0015,4] = 28;
+constraint task_start[F0015,5] = 28;
+constraint task_start[F0015,6] = 28;
+constraint task_start[F0015,7] = 28;
+constraint task_start[F0015,8] = 38;
+constraint task_start[F0015,9] = 42;
+constraint task_start[F0015,10] = 58;
+constraint task_start[F0016,1] = 17;
+constraint task_start[F0016,2] = 19;
+constraint task_start[F0016,3] = 19;
+constraint task_start[F0016,4] = 30;
+constraint task_start[F0016,5] = 30;
+constraint task_start[F0016,6] = 30;
+constraint task_start[F0016,7] = 30;
+constraint task_start[F0016,8] = 35;
+constraint task_start[F0016,9] = 46;
+constraint task_start[F0016,10] = 63;
+constraint task_start[F0017,1] = 19;
+constraint task_start[F0017,2] = 21;
+constraint task_start[F0017,3] = 21;
+constraint task_start[F0017,4] = 30;
+constraint task_start[F0017,5] = 30;
+constraint task_start[F0017,6] = 30;
+constraint task_start[F0017,7] = 30;
+constraint task_start[F0017,8] = 33;
+constraint task_start[F0017,9] = 47;
+constraint task_start[F0017,10] = 63;
+constraint task_start[F0018,1] = 16;
+constraint task_start[F0018,2] = 19;
+constraint task_start[F0018,3] = 19;
+constraint task_start[F0018,4] = 26;
+constraint task_start[F0018,5] = 26;
+constraint task_start[F0018,6] = 26;
+constraint task_start[F0018,7] = 26;
+constraint task_start[F0018,8] = 33;
+constraint task_start[F0018,9] = 42;
+constraint task_start[F0018,10] = 57;
+constraint task_start[F0019,1] = 33;
+constraint task_start[F0019,2] = 35;
+constraint task_start[F0019,3] = 35;
+constraint task_start[F0019,4] = 46;
+constraint task_start[F0019,5] = 46;
+constraint task_start[F0019,6] = 46;
+constraint task_start[F0019,7] = 46;
+constraint task_start[F0019,8] = 47;
+constraint task_start[F0019,9] = 63;
+constraint task_start[F0019,10] = 79;
+constraint task_start[F0020,1] = 31;
+constraint task_start[F0020,2] = 33;
+constraint task_start[F0020,3] = 33;
+constraint task_start[F0020,4] = 40;
+constraint task_start[F0020,5] = 40;
+constraint task_start[F0020,6] = 40;
+constraint task_start[F0020,7] = 40;
+constraint task_start[F0020,8] = 46;
+constraint task_start[F0020,9] = 55;
+constraint task_start[F0020,10] = 67;
+constraint task_start[F0021,1] = 33;
+constraint task_start[F0021,2] = 35;
+constraint task_start[F0021,3] = 35;
+constraint task_start[F0021,4] = 42;
+constraint task_start[F0021,5] = 42;
+constraint task_start[F0021,6] = 42;
+constraint task_start[F0021,7] = 42;
+constraint task_start[F0021,8] = 52;
+constraint task_start[F0021,9] = 58;
+constraint task_start[F0021,10] = 71;
+constraint task_start[F0022,1] = 31;
+constraint task_start[F0022,2] = 33;
+constraint task_start[F0022,3] = 33;
+constraint task_start[F0022,4] = 40;
+constraint task_start[F0022,5] = 40;
+constraint task_start[F0022,6] = 40;
+constraint task_start[F0022,7] = 40;
+constraint task_start[F0022,8] = 45;
+constraint task_start[F0022,9] = 57;
+constraint task_start[F0022,10] = 72;
+constraint task_start[F0023,1] = 32;
+constraint task_start[F0023,2] = 34;
+constraint task_start[F0023,3] = 34;
+constraint task_start[F0023,4] = 44;
+constraint task_start[F0023,5] = 44;
+constraint task_start[F0023,6] = 44;
+constraint task_start[F0023,7] = 44;
+constraint task_start[F0023,8] = 49;
+constraint task_start[F0023,9] = 61;
+constraint task_start[F0023,10] = 78;
+constraint task_start[F0024,1] = 33;
+constraint task_start[F0024,2] = 35;
+constraint task_start[F0024,3] = 35;
+constraint task_start[F0024,4] = 42;
+constraint task_start[F0024,5] = 42;
+constraint task_start[F0024,6] = 42;
+constraint task_start[F0024,7] = 42;
+constraint task_start[F0024,8] = 48;
+constraint task_start[F0024,9] = 58;
+constraint task_start[F0024,10] = 70;
+constraint task_start[F0025,1] = 31;
+constraint task_start[F0025,2] = 34;
+constraint task_start[F0025,3] = 34;
+constraint task_start[F0025,4] = 43;
+constraint task_start[F0025,5] = 43;
+constraint task_start[F0025,6] = 43;
+constraint task_start[F0025,7] = 43;
+constraint task_start[F0025,8] = 49;
+constraint task_start[F0025,9] = 60;
+constraint task_start[F0025,10] = 73;
+constraint task_start[F0026,1] = 47;
+constraint task_start[F0026,2] = 49;
+constraint task_start[F0026,3] = 49;
+constraint task_start[F0026,4] = 57;
+constraint task_start[F0026,5] = 57;
+constraint task_start[F0026,6] = 57;
+constraint task_start[F0026,7] = 57;
+constraint task_start[F0026,8] = 60;
+constraint task_start[F0026,9] = 72;
+constraint task_start[F0026,10] = 89;
+constraint task_start[F0027,1] = 48;
+constraint task_start[F0027,2] = 50;
+constraint task_start[F0027,3] = 50;
+constraint task_start[F0027,4] = 58;
+constraint task_start[F0027,5] = 58;
+constraint task_start[F0027,6] = 58;
+constraint task_start[F0027,7] = 58;
+constraint task_start[F0027,8] = 66;
+constraint task_start[F0027,9] = 75;
+constraint task_start[F0027,10] = 88;
+constraint task_start[F0028,1] = 47;
+constraint task_start[F0028,2] = 50;
+constraint task_start[F0028,3] = 50;
+constraint task_start[F0028,4] = 57;
+constraint task_start[F0028,5] = 57;
+constraint task_start[F0028,6] = 57;
+constraint task_start[F0028,7] = 57;
+constraint task_start[F0028,8] = 64;
+constraint task_start[F0028,9] = 71;
+constraint task_start[F0028,10] = 87;
+constraint task_start[F0029,1] = 47;
+constraint task_start[F0029,2] = 49;
+constraint task_start[F0029,3] = 49;
+constraint task_start[F0029,4] = 59;
+constraint task_start[F0029,5] = 59;
+constraint task_start[F0029,6] = 59;
+constraint task_start[F0029,7] = 59;
+constraint task_start[F0029,8] = 66;
+constraint task_start[F0029,9] = 75;
+constraint task_start[F0029,10] = 87;
+constraint task_start[F0030,1] = 45;
+constraint task_start[F0030,2] = 47;
+constraint task_start[F0030,3] = 47;
+constraint task_start[F0030,4] = 55;
+constraint task_start[F0030,5] = 55;
+constraint task_start[F0030,6] = 55;
+constraint task_start[F0030,7] = 55;
+constraint task_start[F0030,8] = 58;
+constraint task_start[F0030,9] = 70;
+constraint task_start[F0030,10] = 86;
+constraint task_start[F0031,1] = 64;
+constraint task_start[F0031,2] = 66;
+constraint task_start[F0031,3] = 66;
+constraint task_start[F0031,4] = 76;
+constraint task_start[F0031,5] = 76;
+constraint task_start[F0031,6] = 76;
+constraint task_start[F0031,7] = 76;
+constraint task_start[F0031,8] = 81;
+constraint task_start[F0031,9] = 93;
+constraint task_start[F0031,10] = 106;
+constraint task_start[F0032,1] = 62;
+constraint task_start[F0032,2] = 64;
+constraint task_start[F0032,3] = 64;
+constraint task_start[F0032,4] = 71;
+constraint task_start[F0032,5] = 71;
+constraint task_start[F0032,6] = 71;
+constraint task_start[F0032,7] = 71;
+constraint task_start[F0032,8] = 77;
+constraint task_start[F0032,9] = 86;
+constraint task_start[F0032,10] = 99;
+constraint task_start[F0033,1] = 62;
+constraint task_start[F0033,2] = 65;
+constraint task_start[F0033,3] = 65;
+constraint task_start[F0033,4] = 73;
+constraint task_start[F0033,5] = 73;
+constraint task_start[F0033,6] = 73;
+constraint task_start[F0033,7] = 73;
+constraint task_start[F0033,8] = 82;
+constraint task_start[F0033,9] = 88;
+constraint task_start[F0033,10] = 104;
+constraint task_start[F0034,1] = 62;
+constraint task_start[F0034,2] = 65;
+constraint task_start[F0034,3] = 65;
+constraint task_start[F0034,4] = 73;
+constraint task_start[F0034,5] = 73;
+constraint task_start[F0034,6] = 73;
+constraint task_start[F0034,7] = 73;
+constraint task_start[F0034,8] = 76;
+constraint task_start[F0034,9] = 88;
+constraint task_start[F0034,10] = 102;
+constraint task_start[F0035,1] = 60;
+constraint task_start[F0035,2] = 62;
+constraint task_start[F0035,3] = 62;
+constraint task_start[F0035,4] = 71;
+constraint task_start[F0035,5] = 71;
+constraint task_start[F0035,6] = 71;
+constraint task_start[F0035,7] = 71;
+constraint task_start[F0035,8] = 78;
+constraint task_start[F0035,9] = 87;
+constraint task_start[F0035,10] = 102;
+constraint task_start[F0036,1] = 61;
+constraint task_start[F0036,2] = 63;
+constraint task_start[F0036,3] = 63;
+constraint task_start[F0036,4] = 72;
+constraint task_start[F0036,5] = 72;
+constraint task_start[F0036,6] = 72;
+constraint task_start[F0036,7] = 72;
+constraint task_start[F0036,8] = 77;
+constraint task_start[F0036,9] = 88;
+constraint task_start[F0036,10] = 105;
+constraint task_start[F0037,1] = 61;
+constraint task_start[F0037,2] = 64;
+constraint task_start[F0037,3] = 64;
+constraint task_start[F0037,4] = 74;
+constraint task_start[F0037,5] = 74;
+constraint task_start[F0037,6] = 74;
+constraint task_start[F0037,7] = 74;
+constraint task_start[F0037,8] = 76;
+constraint task_start[F0037,9] = 89;
+constraint task_start[F0037,10] = 106;
+constraint task_start[F0038,1] = 77;
+constraint task_start[F0038,2] = 80;
+constraint task_start[F0038,3] = 80;
+constraint task_start[F0038,4] = 91;
+constraint task_start[F0038,5] = 91;
+constraint task_start[F0038,6] = 91;
+constraint task_start[F0038,7] = 91;
+constraint task_start[F0038,8] = 97;
+constraint task_start[F0038,9] = 108;
+constraint task_start[F0038,10] = 113;
+constraint task_start[F0038,11] = 130;
+constraint task_start[F0039,1] = 77;
+constraint task_start[F0039,2] = 79;
+constraint task_start[F0039,3] = 79;
+constraint task_start[F0039,4] = 89;
+constraint task_start[F0039,5] = 89;
+constraint task_start[F0039,6] = 89;
+constraint task_start[F0039,7] = 89;
+constraint task_start[F0039,8] = 96;
+constraint task_start[F0039,9] = 106;
+constraint task_start[F0039,10] = 120;
+constraint task_start[F0040,1] = 75;
+constraint task_start[F0040,2] = 77;
+constraint task_start[F0040,3] = 77;
+constraint task_start[F0040,4] = 86;
+constraint task_start[F0040,5] = 86;
+constraint task_start[F0040,6] = 86;
+constraint task_start[F0040,7] = 86;
+constraint task_start[F0040,8] = 89;
+constraint task_start[F0040,9] = 103;
+constraint task_start[F0040,10] = 116;
+constraint task_start[F0041,1] = 76;
+constraint task_start[F0041,2] = 78;
+constraint task_start[F0041,3] = 78;
+constraint task_start[F0041,4] = 89;
+constraint task_start[F0041,5] = 89;
+constraint task_start[F0041,6] = 89;
+constraint task_start[F0041,7] = 89;
+constraint task_start[F0041,8] = 91;
+constraint task_start[F0041,9] = 105;
+constraint task_start[F0041,10] = 120;
+constraint task_start[F0042,1] = 76;
+constraint task_start[F0042,2] = 79;
+constraint task_start[F0042,3] = 79;
+constraint task_start[F0042,4] = 86;
+constraint task_start[F0042,5] = 86;
+constraint task_start[F0042,6] = 86;
+constraint task_start[F0042,7] = 86;
+constraint task_start[F0042,8] = 93;
+constraint task_start[F0042,9] = 102;
+constraint task_start[F0042,10] = 117;
+constraint task_start[F0043,1] = 75;
+constraint task_start[F0043,2] = 77;
+constraint task_start[F0043,3] = 77;
+constraint task_start[F0043,4] = 87;
+constraint task_start[F0043,5] = 87;
+constraint task_start[F0043,6] = 87;
+constraint task_start[F0043,7] = 87;
+constraint task_start[F0043,8] = 93;
+constraint task_start[F0043,9] = 104;
+constraint task_start[F0043,10] = 117;
+constraint task_start[F0044,1] = 92;
+constraint task_start[F0044,2] = 95;
+constraint task_start[F0044,3] = 95;
+constraint task_start[F0044,4] = 106;
+constraint task_start[F0044,5] = 106;
+constraint task_start[F0044,6] = 106;
+constraint task_start[F0044,7] = 106;
+constraint task_start[F0044,8] = 109;
+constraint task_start[F0044,9] = 123;
+constraint task_start[F0044,10] = 138;
+constraint task_start[F0045,1] = 93;
+constraint task_start[F0045,2] = 95;
+constraint task_start[F0045,3] = 95;
+constraint task_start[F0045,4] = 102;
+constraint task_start[F0045,5] = 102;
+constraint task_start[F0045,6] = 102;
+constraint task_start[F0045,7] = 102;
+constraint task_start[F0045,8] = 110;
+constraint task_start[F0045,9] = 119;
+constraint task_start[F0045,10] = 131;
+constraint task_start[F0046,1] = 90;
+constraint task_start[F0046,2] = 93;
+constraint task_start[F0046,3] = 93;
+constraint task_start[F0046,4] = 101;
+constraint task_start[F0046,5] = 101;
+constraint task_start[F0046,6] = 101;
+constraint task_start[F0046,7] = 101;
+constraint task_start[F0046,8] = 108;
+constraint task_start[F0046,9] = 117;
+constraint task_start[F0046,10] = 134;
+constraint task_start[F0047,1] = 94;
+constraint task_start[F0047,2] = 98;
+constraint task_start[F0047,3] = 98;
+constraint task_start[F0047,4] = 110;
+constraint task_start[F0047,5] = 110;
+constraint task_start[F0047,6] = 110;
+constraint task_start[F0047,7] = 110;
+constraint task_start[F0047,8] = 127;
+constraint task_start[F0047,9] = 158;
+constraint task_start[F0047,10] = 164;
+constraint task_start[F0047,11] = 197;
+constraint task_start[F0048,1] = 94;
+constraint task_start[F0048,2] = 97;
+constraint task_start[F0048,3] = 97;
+constraint task_start[F0048,4] = 107;
+constraint task_start[F0048,5] = 107;
+constraint task_start[F0048,6] = 107;
+constraint task_start[F0048,7] = 107;
+constraint task_start[F0048,8] = 114;
+constraint task_start[F0048,9] = 124;
+constraint task_start[F0048,10] = 138;
+constraint task_start[F0049,1] = 92;
+constraint task_start[F0049,2] = 94;
+constraint task_start[F0049,3] = 94;
+constraint task_start[F0049,4] = 101;
+constraint task_start[F0049,5] = 101;
+constraint task_start[F0049,6] = 101;
+constraint task_start[F0049,7] = 101;
+constraint task_start[F0049,8] = 109;
+constraint task_start[F0049,9] = 116;
+constraint task_start[F0049,10] = 130;
+constraint task_start[F0050,1] = 92;
+constraint task_start[F0050,2] = 95;
+constraint task_start[F0050,3] = 95;
+constraint task_start[F0050,4] = 106;
+constraint task_start[F0050,5] = 106;
+constraint task_start[F0050,6] = 106;
+constraint task_start[F0050,7] = 106;
+constraint task_start[F0050,8] = 121;
+constraint task_start[F0050,9] = 153;
+constraint task_start[F0050,10] = 158;
+constraint task_start[F0050,11] = 190;
+constraint task_start[F0051,1] = 94;
+constraint task_start[F0051,2] = 99;
+constraint task_start[F0051,3] = 99;
+constraint task_start[F0051,4] = 108;
+constraint task_start[F0051,5] = 108;
+constraint task_start[F0051,6] = 108;
+constraint task_start[F0051,7] = 108;
+constraint task_start[F0051,8] = 126;
+constraint task_start[F0051,9] = 157;
+constraint task_start[F0051,10] = 163;
+constraint task_start[F0051,11] = 193;
+constraint task_start[F0052,1] = 92;
+constraint task_start[F0052,2] = 95;
+constraint task_start[F0052,3] = 95;
+constraint task_start[F0052,4] = 103;
+constraint task_start[F0052,5] = 103;
+constraint task_start[F0052,6] = 103;
+constraint task_start[F0052,7] = 103;
+constraint task_start[F0052,8] = 106;
+constraint task_start[F0052,9] = 118;
+constraint task_start[F0052,10] = 131;
+constraint task_start[F0053,1] = 108;
+constraint task_start[F0053,2] = 111;
+constraint task_start[F0053,3] = 111;
+constraint task_start[F0053,4] = 122;
+constraint task_start[F0053,5] = 122;
+constraint task_start[F0053,6] = 122;
+constraint task_start[F0053,7] = 122;
+constraint task_start[F0053,8] = 128;
+constraint task_start[F0053,9] = 139;
+constraint task_start[F0053,10] = 151;
+constraint task_start[F0054,1] = 106;
+constraint task_start[F0054,2] = 108;
+constraint task_start[F0054,3] = 108;
+constraint task_start[F0054,4] = 117;
+constraint task_start[F0054,5] = 117;
+constraint task_start[F0054,6] = 117;
+constraint task_start[F0054,7] = 117;
+constraint task_start[F0054,8] = 124;
+constraint task_start[F0054,9] = 136;
+constraint task_start[F0054,10] = 139;
+constraint task_start[F0054,11] = 158;
+constraint task_start[F0055,1] = 106;
+constraint task_start[F0055,2] = 108;
+constraint task_start[F0055,3] = 108;
+constraint task_start[F0055,4] = 119;
+constraint task_start[F0055,5] = 119;
+constraint task_start[F0055,6] = 119;
+constraint task_start[F0055,7] = 119;
+constraint task_start[F0055,8] = 120;
+constraint task_start[F0055,9] = 136;
+constraint task_start[F0055,10] = 148;
+constraint task_start[F0056,1] = 109;
+constraint task_start[F0056,2] = 111;
+constraint task_start[F0056,3] = 111;
+constraint task_start[F0056,4] = 120;
+constraint task_start[F0056,5] = 120;
+constraint task_start[F0056,6] = 120;
+constraint task_start[F0056,7] = 120;
+constraint task_start[F0056,8] = 127;
+constraint task_start[F0056,9] = 135;
+constraint task_start[F0056,10] = 151;
+constraint task_start[F0057,1] = 105;
+constraint task_start[F0057,2] = 110;
+constraint task_start[F0057,3] = 110;
+constraint task_start[F0057,4] = 122;
+constraint task_start[F0057,5] = 122;
+constraint task_start[F0057,6] = 122;
+constraint task_start[F0057,7] = 122;
+constraint task_start[F0057,8] = 132;
+constraint task_start[F0057,9] = 170;
+constraint task_start[F0057,10] = 178;
+constraint task_start[F0057,11] = 211;
+constraint task_start[F0058,1] = 106;
+constraint task_start[F0058,2] = 109;
+constraint task_start[F0058,3] = 109;
+constraint task_start[F0058,4] = 117;
+constraint task_start[F0058,5] = 117;
+constraint task_start[F0058,6] = 117;
+constraint task_start[F0058,7] = 117;
+constraint task_start[F0058,8] = 121;
+constraint task_start[F0058,9] = 133;
+constraint task_start[F0058,10] = 150;
+constraint task_start[F0059,1] = 105;
+constraint task_start[F0059,2] = 107;
+constraint task_start[F0059,3] = 107;
+constraint task_start[F0059,4] = 115;
+constraint task_start[F0059,5] = 115;
+constraint task_start[F0059,6] = 115;
+constraint task_start[F0059,7] = 115;
+constraint task_start[F0059,8] = 123;
+constraint task_start[F0059,9] = 131;
+constraint task_start[F0059,10] = 146;
+constraint task_start[F0060,1] = 106;
+constraint task_start[F0060,2] = 108;
+constraint task_start[F0060,3] = 108;
+constraint task_start[F0060,4] = 116;
+constraint task_start[F0060,5] = 116;
+constraint task_start[F0060,6] = 116;
+constraint task_start[F0060,7] = 116;
+constraint task_start[F0060,8] = 119;
+constraint task_start[F0060,9] = 133;
+constraint task_start[F0060,10] = 150;
+constraint task_start[F0061,1] = 121;
+constraint task_start[F0061,2] = 123;
+constraint task_start[F0061,3] = 123;
+constraint task_start[F0061,4] = 133;
+constraint task_start[F0061,5] = 133;
+constraint task_start[F0061,6] = 133;
+constraint task_start[F0061,7] = 133;
+constraint task_start[F0061,8] = 140;
+constraint task_start[F0061,9] = 150;
+constraint task_start[F0061,10] = 162;
+constraint task_start[F0062,1] = 120;
+constraint task_start[F0062,2] = 122;
+constraint task_start[F0062,3] = 122;
+constraint task_start[F0062,4] = 130;
+constraint task_start[F0062,5] = 130;
+constraint task_start[F0062,6] = 130;
+constraint task_start[F0062,7] = 130;
+constraint task_start[F0062,8] = 135;
+constraint task_start[F0062,9] = 146;
+constraint task_start[F0062,10] = 163;
+constraint task_start[F0063,1] = 121;
+constraint task_start[F0063,2] = 124;
+constraint task_start[F0063,3] = 124;
+constraint task_start[F0063,4] = 135;
+constraint task_start[F0063,5] = 135;
+constraint task_start[F0063,6] = 135;
+constraint task_start[F0063,7] = 135;
+constraint task_start[F0063,8] = 140;
+constraint task_start[F0063,9] = 151;
+constraint task_start[F0063,10] = 168;
+constraint task_start[F0064,1] = 124;
+constraint task_start[F0064,2] = 126;
+constraint task_start[F0064,3] = 126;
+constraint task_start[F0064,4] = 134;
+constraint task_start[F0064,5] = 134;
+constraint task_start[F0064,6] = 134;
+constraint task_start[F0064,7] = 134;
+constraint task_start[F0064,8] = 137;
+constraint task_start[F0064,9] = 151;
+constraint task_start[F0064,10] = 164;
+constraint task_start[F0065,1] = 123;
+constraint task_start[F0065,2] = 127;
+constraint task_start[F0065,3] = 127;
+constraint task_start[F0065,4] = 135;
+constraint task_start[F0065,5] = 135;
+constraint task_start[F0065,6] = 135;
+constraint task_start[F0065,7] = 135;
+constraint task_start[F0065,8] = 150;
+constraint task_start[F0065,9] = 174;
+constraint task_start[F0065,10] = 210;
+constraint task_start[F0066,1] = 124;
+constraint task_start[F0066,2] = 126;
+constraint task_start[F0066,3] = 126;
+constraint task_start[F0066,4] = 135;
+constraint task_start[F0066,5] = 135;
+constraint task_start[F0066,6] = 135;
+constraint task_start[F0066,7] = 135;
+constraint task_start[F0066,8] = 141;
+constraint task_start[F0066,9] = 151;
+constraint task_start[F0066,10] = 166;
+constraint task_start[F0067,1] = 139;
+constraint task_start[F0067,2] = 142;
+constraint task_start[F0067,3] = 142;
+constraint task_start[F0067,4] = 149;
+constraint task_start[F0067,5] = 149;
+constraint task_start[F0067,6] = 149;
+constraint task_start[F0067,7] = 149;
+constraint task_start[F0067,8] = 155;
+constraint task_start[F0067,9] = 166;
+constraint task_start[F0067,10] = 182;
+constraint task_start[F0068,1] = 139;
+constraint task_start[F0068,2] = 142;
+constraint task_start[F0068,3] = 142;
+constraint task_start[F0068,4] = 149;
+constraint task_start[F0068,5] = 149;
+constraint task_start[F0068,6] = 149;
+constraint task_start[F0068,7] = 149;
+constraint task_start[F0068,8] = 157;
+constraint task_start[F0068,9] = 165;
+constraint task_start[F0068,10] = 182;
+constraint task_start[F0069,1] = 137;
+constraint task_start[F0069,2] = 139;
+constraint task_start[F0069,3] = 139;
+constraint task_start[F0069,4] = 146;
+constraint task_start[F0069,5] = 146;
+constraint task_start[F0069,6] = 146;
+constraint task_start[F0069,7] = 146;
+constraint task_start[F0069,8] = 154;
+constraint task_start[F0069,9] = 163;
+constraint task_start[F0069,10] = 176;
+constraint task_start[F0070,1] = 137;
+constraint task_start[F0070,2] = 140;
+constraint task_start[F0070,3] = 140;
+constraint task_start[F0070,4] = 148;
+constraint task_start[F0070,5] = 148;
+constraint task_start[F0070,6] = 148;
+constraint task_start[F0070,7] = 148;
+constraint task_start[F0070,8] = 151;
+constraint task_start[F0070,9] = 163;
+constraint task_start[F0070,10] = 179;
+constraint task_start[F0071,1] = 139;
+constraint task_start[F0071,2] = 141;
+constraint task_start[F0071,3] = 141;
+constraint task_start[F0071,4] = 150;
+constraint task_start[F0071,5] = 150;
+constraint task_start[F0071,6] = 150;
+constraint task_start[F0071,7] = 150;
+constraint task_start[F0071,8] = 153;
+constraint task_start[F0071,9] = 165;
+constraint task_start[F0071,10] = 178;
+constraint task_start[F0072,1] = 136;
+constraint task_start[F0072,2] = 138;
+constraint task_start[F0072,3] = 138;
+constraint task_start[F0072,4] = 148;
+constraint task_start[F0072,5] = 148;
+constraint task_start[F0072,6] = 148;
+constraint task_start[F0072,7] = 148;
+constraint task_start[F0072,8] = 151;
+constraint task_start[F0072,9] = 163;
+constraint task_start[F0072,10] = 178;
+constraint task_start[F0073,1] = 135;
+constraint task_start[F0073,2] = 138;
+constraint task_start[F0073,3] = 138;
+constraint task_start[F0073,4] = 149;
+constraint task_start[F0073,5] = 149;
+constraint task_start[F0073,6] = 149;
+constraint task_start[F0073,7] = 149;
+constraint task_start[F0073,8] = 154;
+constraint task_start[F0073,9] = 166;
+constraint task_start[F0073,10] = 183;
+constraint task_start[F0074,1] = 139;
+constraint task_start[F0074,2] = 143;
+constraint task_start[F0074,3] = 143;
+constraint task_start[F0074,4] = 152;
+constraint task_start[F0074,5] = 152;
+constraint task_start[F0074,6] = 152;
+constraint task_start[F0074,7] = 152;
+constraint task_start[F0074,8] = 167;
+constraint task_start[F0074,9] = 195;
+constraint task_start[F0074,10] = 203;
+constraint task_start[F0074,11] = 234;
+constraint task_start[F0075,1] = 136;
+constraint task_start[F0075,2] = 140;
+constraint task_start[F0075,3] = 140;
+constraint task_start[F0075,4] = 152;
+constraint task_start[F0075,5] = 152;
+constraint task_start[F0075,6] = 152;
+constraint task_start[F0075,7] = 152;
+constraint task_start[F0075,8] = 163;
+constraint task_start[F0075,9] = 196;
+constraint task_start[F0075,10] = 201;
+constraint task_start[F0075,11] = 236;
+constraint task_start[F0076,1] = 137;
+constraint task_start[F0076,2] = 139;
+constraint task_start[F0076,3] = 139;
+constraint task_start[F0076,4] = 146;
+constraint task_start[F0076,5] = 146;
+constraint task_start[F0076,6] = 146;
+constraint task_start[F0076,7] = 146;
+constraint task_start[F0076,8] = 155;
+constraint task_start[F0076,9] = 163;
+constraint task_start[F0076,10] = 180;
+constraint task_start[F0077,1] = 150;
+constraint task_start[F0077,2] = 154;
+constraint task_start[F0077,3] = 154;
+constraint task_start[F0077,4] = 166;
+constraint task_start[F0077,5] = 166;
+constraint task_start[F0077,6] = 166;
+constraint task_start[F0077,7] = 166;
+constraint task_start[F0077,8] = 179;
+constraint task_start[F0077,9] = 209;
+constraint task_start[F0077,10] = 214;
+constraint task_start[F0077,11] = 247;
+constraint task_start[F0078,1] = 154;
+constraint task_start[F0078,2] = 157;
+constraint task_start[F0078,3] = 157;
+constraint task_start[F0078,4] = 165;
+constraint task_start[F0078,5] = 165;
+constraint task_start[F0078,6] = 165;
+constraint task_start[F0078,7] = 165;
+constraint task_start[F0078,8] = 174;
+constraint task_start[F0078,9] = 180;
+constraint task_start[F0078,10] = 193;
+constraint task_start[F0079,1] = 151;
+constraint task_start[F0079,2] = 153;
+constraint task_start[F0079,3] = 153;
+constraint task_start[F0079,4] = 163;
+constraint task_start[F0079,5] = 163;
+constraint task_start[F0079,6] = 163;
+constraint task_start[F0079,7] = 163;
+constraint task_start[F0079,8] = 169;
+constraint task_start[F0079,9] = 177;
+constraint task_start[F0079,10] = 190;
+constraint task_start[F0080,1] = 154;
+constraint task_start[F0080,2] = 156;
+constraint task_start[F0080,3] = 156;
+constraint task_start[F0080,4] = 166;
+constraint task_start[F0080,5] = 166;
+constraint task_start[F0080,6] = 166;
+constraint task_start[F0080,7] = 166;
+constraint task_start[F0080,8] = 172;
+constraint task_start[F0080,9] = 180;
+constraint task_start[F0080,10] = 196;
+constraint task_start[F0081,1] = 154;
+constraint task_start[F0081,2] = 157;
+constraint task_start[F0081,3] = 157;
+constraint task_start[F0081,4] = 165;
+constraint task_start[F0081,5] = 165;
+constraint task_start[F0081,6] = 165;
+constraint task_start[F0081,7] = 165;
+constraint task_start[F0081,8] = 168;
+constraint task_start[F0081,9] = 180;
+constraint task_start[F0081,10] = 195;
+constraint task_start[F0082,1] = 151;
+constraint task_start[F0082,2] = 153;
+constraint task_start[F0082,3] = 153;
+constraint task_start[F0082,4] = 162;
+constraint task_start[F0082,5] = 162;
+constraint task_start[F0082,6] = 162;
+constraint task_start[F0082,7] = 162;
+constraint task_start[F0082,8] = 167;
+constraint task_start[F0082,9] = 179;
+constraint task_start[F0082,10] = 196;
+constraint task_start[F0083,1] = 151;
+constraint task_start[F0083,2] = 155;
+constraint task_start[F0083,3] = 155;
+constraint task_start[F0083,4] = 167;
+constraint task_start[F0083,5] = 167;
+constraint task_start[F0083,6] = 167;
+constraint task_start[F0083,7] = 167;
+constraint task_start[F0083,8] = 181;
+constraint task_start[F0083,9] = 217;
+constraint task_start[F0083,10] = 223;
+constraint task_start[F0083,11] = 254;
+constraint task_start[F0084,1] = 152;
+constraint task_start[F0084,2] = 155;
+constraint task_start[F0084,3] = 155;
+constraint task_start[F0084,4] = 165;
+constraint task_start[F0084,5] = 165;
+constraint task_start[F0084,6] = 165;
+constraint task_start[F0084,7] = 165;
+constraint task_start[F0084,8] = 170;
+constraint task_start[F0084,9] = 182;
+constraint task_start[F0084,10] = 195;
+constraint task_start[F0085,1] = 154;
+constraint task_start[F0085,2] = 157;
+constraint task_start[F0085,3] = 157;
+constraint task_start[F0085,4] = 166;
+constraint task_start[F0085,5] = 166;
+constraint task_start[F0085,6] = 166;
+constraint task_start[F0085,7] = 166;
+constraint task_start[F0085,8] = 169;
+constraint task_start[F0085,9] = 180;
+constraint task_start[F0085,10] = 192;
+constraint task_start[F0086,1] = 150;
+constraint task_start[F0086,2] = 152;
+constraint task_start[F0086,3] = 152;
+constraint task_start[F0086,4] = 159;
+constraint task_start[F0086,5] = 159;
+constraint task_start[F0086,6] = 159;
+constraint task_start[F0086,7] = 159;
+constraint task_start[F0086,8] = 163;
+constraint task_start[F0086,9] = 175;
+constraint task_start[F0086,10] = 187;
+constraint task_start[F0087,1] = 166;
+constraint task_start[F0087,2] = 168;
+constraint task_start[F0087,3] = 168;
+constraint task_start[F0087,4] = 177;
+constraint task_start[F0087,5] = 177;
+constraint task_start[F0087,6] = 177;
+constraint task_start[F0087,7] = 177;
+constraint task_start[F0087,8] = 183;
+constraint task_start[F0087,9] = 193;
+constraint task_start[F0087,10] = 210;
+constraint task_start[F0088,1] = 165;
+constraint task_start[F0088,2] = 168;
+constraint task_start[F0088,3] = 168;
+constraint task_start[F0088,4] = 176;
+constraint task_start[F0088,5] = 176;
+constraint task_start[F0088,6] = 176;
+constraint task_start[F0088,7] = 176;
+constraint task_start[F0088,8] = 185;
+constraint task_start[F0088,9] = 193;
+constraint task_start[F0088,10] = 207;
+constraint task_start[F0089,1] = 165;
+constraint task_start[F0089,2] = 167;
+constraint task_start[F0089,3] = 167;
+constraint task_start[F0089,4] = 175;
+constraint task_start[F0089,5] = 175;
+constraint task_start[F0089,6] = 175;
+constraint task_start[F0089,7] = 175;
+constraint task_start[F0089,8] = 180;
+constraint task_start[F0089,9] = 191;
+constraint task_start[F0089,10] = 205;
+constraint task_start[F0090,1] = 168;
+constraint task_start[F0090,2] = 170;
+constraint task_start[F0090,3] = 170;
+constraint task_start[F0090,4] = 179;
+constraint task_start[F0090,5] = 179;
+constraint task_start[F0090,6] = 179;
+constraint task_start[F0090,7] = 179;
+constraint task_start[F0090,8] = 184;
+constraint task_start[F0090,9] = 194;
+constraint task_start[F0090,10] = 211;
+constraint task_start[F0091,1] = 166;
+constraint task_start[F0091,2] = 169;
+constraint task_start[F0091,3] = 169;
+constraint task_start[F0091,4] = 181;
+constraint task_start[F0091,5] = 181;
+constraint task_start[F0091,6] = 181;
+constraint task_start[F0091,7] = 181;
+constraint task_start[F0091,8] = 193;
+constraint task_start[F0091,9] = 224;
+constraint task_start[F0091,10] = 229;
+constraint task_start[F0091,11] = 262;
+constraint task_start[F0092,1] = 165;
+constraint task_start[F0092,2] = 168;
+constraint task_start[F0092,3] = 168;
+constraint task_start[F0092,4] = 176;
+constraint task_start[F0092,5] = 176;
+constraint task_start[F0092,6] = 176;
+constraint task_start[F0092,7] = 176;
+constraint task_start[F0092,8] = 185;
+constraint task_start[F0092,9] = 192;
+constraint task_start[F0092,10] = 207;
+constraint task_start[F0093,1] = 168;
+constraint task_start[F0093,2] = 171;
+constraint task_start[F0093,3] = 171;
+constraint task_start[F0093,4] = 178;
+constraint task_start[F0093,5] = 178;
+constraint task_start[F0093,6] = 178;
+constraint task_start[F0093,7] = 178;
+constraint task_start[F0093,8] = 188;
+constraint task_start[F0093,9] = 195;
+constraint task_start[F0093,10] = 207;
+constraint task_start[F0094,1] = 166;
+constraint task_start[F0094,2] = 171;
+constraint task_start[F0094,3] = 171;
+constraint task_start[F0094,4] = 182;
+constraint task_start[F0094,5] = 182;
+constraint task_start[F0094,6] = 182;
+constraint task_start[F0094,7] = 182;
+constraint task_start[F0094,8] = 197;
+constraint task_start[F0094,9] = 222;
+constraint task_start[F0094,10] = 227;
+constraint task_start[F0094,11] = 264;
+constraint task_start[F0095,1] = 167;
+constraint task_start[F0095,2] = 169;
+constraint task_start[F0095,3] = 169;
+constraint task_start[F0095,4] = 179;
+constraint task_start[F0095,5] = 179;
+constraint task_start[F0095,6] = 179;
+constraint task_start[F0095,7] = 179;
+constraint task_start[F0095,8] = 182;
+constraint task_start[F0095,9] = 196;
+constraint task_start[F0095,10] = 209;
+constraint task_start[F0096,1] = 167;
+constraint task_start[F0096,2] = 169;
+constraint task_start[F0096,3] = 169;
+constraint task_start[F0096,4] = 178;
+constraint task_start[F0096,5] = 178;
+constraint task_start[F0096,6] = 178;
+constraint task_start[F0096,7] = 178;
+constraint task_start[F0096,8] = 180;
+constraint task_start[F0096,9] = 192;
+constraint task_start[F0096,10] = 209;
+constraint task_start[F0097,1] = 168;
+constraint task_start[F0097,2] = 170;
+constraint task_start[F0097,3] = 170;
+constraint task_start[F0097,4] = 180;
+constraint task_start[F0097,5] = 180;
+constraint task_start[F0097,6] = 180;
+constraint task_start[F0097,7] = 180;
+constraint task_start[F0097,8] = 182;
+constraint task_start[F0097,9] = 196;
+constraint task_start[F0097,10] = 209;
+constraint task_start[F0098,1] = 167;
+constraint task_start[F0098,2] = 171;
+constraint task_start[F0098,3] = 171;
+constraint task_start[F0098,4] = 180;
+constraint task_start[F0098,5] = 180;
+constraint task_start[F0098,6] = 180;
+constraint task_start[F0098,7] = 180;
+constraint task_start[F0098,8] = 199;
+constraint task_start[F0098,9] = 226;
+constraint task_start[F0098,10] = 234;
+constraint task_start[F0098,11] = 264;
+constraint task_start[F0099,1] = 165;
+constraint task_start[F0099,2] = 168;
+constraint task_start[F0099,3] = 168;
+constraint task_start[F0099,4] = 175;
+constraint task_start[F0099,5] = 175;
+constraint task_start[F0099,6] = 175;
+constraint task_start[F0099,7] = 175;
+constraint task_start[F0099,8] = 185;
+constraint task_start[F0099,9] = 189;
+constraint task_start[F0099,10] = 206;
+constraint task_start[F0100,1] = 181;
+constraint task_start[F0100,2] = 183;
+constraint task_start[F0100,3] = 183;
+constraint task_start[F0100,4] = 192;
+constraint task_start[F0100,5] = 192;
+constraint task_start[F0100,6] = 192;
+constraint task_start[F0100,7] = 192;
+constraint task_start[F0100,8] = 194;
+constraint task_start[F0100,9] = 206;
+constraint task_start[F0100,10] = 221;
+constraint task_start[F0101,1] = 182;
+constraint task_start[F0101,2] = 186;
+constraint task_start[F0101,3] = 186;
+constraint task_start[F0101,4] = 194;
+constraint task_start[F0101,5] = 194;
+constraint task_start[F0101,6] = 194;
+constraint task_start[F0101,7] = 194;
+constraint task_start[F0101,8] = 206;
+constraint task_start[F0101,9] = 237;
+constraint task_start[F0101,10] = 266;
+constraint task_start[F0102,1] = 182;
+constraint task_start[F0102,2] = 185;
+constraint task_start[F0102,3] = 185;
+constraint task_start[F0102,4] = 193;
+constraint task_start[F0102,5] = 193;
+constraint task_start[F0102,6] = 193;
+constraint task_start[F0102,7] = 193;
+constraint task_start[F0102,8] = 199;
+constraint task_start[F0102,9] = 211;
+constraint task_start[F0102,10] = 215;
+constraint task_start[F0102,11] = 233;
+constraint task_start[F0103,1] = 180;
+constraint task_start[F0103,2] = 183;
+constraint task_start[F0103,3] = 183;
+constraint task_start[F0103,4] = 191;
+constraint task_start[F0103,5] = 191;
+constraint task_start[F0103,6] = 191;
+constraint task_start[F0103,7] = 191;
+constraint task_start[F0103,8] = 200;
+constraint task_start[F0103,9] = 207;
+constraint task_start[F0103,10] = 222;
+constraint task_start[F0104,1] = 184;
+constraint task_start[F0104,2] = 187;
+constraint task_start[F0104,3] = 187;
+constraint task_start[F0104,4] = 195;
+constraint task_start[F0104,5] = 195;
+constraint task_start[F0104,6] = 195;
+constraint task_start[F0104,7] = 195;
+constraint task_start[F0104,8] = 201;
+constraint task_start[F0104,9] = 211;
+constraint task_start[F0104,10] = 224;
+constraint task_start[F0105,1] = 183;
+constraint task_start[F0105,2] = 186;
+constraint task_start[F0105,3] = 186;
+constraint task_start[F0105,4] = 197;
+constraint task_start[F0105,5] = 197;
+constraint task_start[F0105,6] = 197;
+constraint task_start[F0105,7] = 197;
+constraint task_start[F0105,8] = 197;
+constraint task_start[F0105,9] = 214;
+constraint task_start[F0105,10] = 226;
+constraint task_start[F0106,1] = 183;
+constraint task_start[F0106,2] = 186;
+constraint task_start[F0106,3] = 186;
+constraint task_start[F0106,4] = 194;
+constraint task_start[F0106,5] = 194;
+constraint task_start[F0106,6] = 194;
+constraint task_start[F0106,7] = 194;
+constraint task_start[F0106,8] = 199;
+constraint task_start[F0106,9] = 211;
+constraint task_start[F0106,10] = 228;
+constraint task_start[F0107,1] = 182;
+constraint task_start[F0107,2] = 184;
+constraint task_start[F0107,3] = 184;
+constraint task_start[F0107,4] = 193;
+constraint task_start[F0107,5] = 193;
+constraint task_start[F0107,6] = 193;
+constraint task_start[F0107,7] = 193;
+constraint task_start[F0107,8] = 199;
+constraint task_start[F0107,9] = 210;
+constraint task_start[F0107,10] = 222;
+constraint task_start[F0108,1] = 196;
+constraint task_start[F0108,2] = 198;
+constraint task_start[F0108,3] = 198;
+constraint task_start[F0108,4] = 205;
+constraint task_start[F0108,5] = 205;
+constraint task_start[F0108,6] = 205;
+constraint task_start[F0108,7] = 205;
+constraint task_start[F0108,8] = 210;
+constraint task_start[F0108,9] = 221;
+constraint task_start[F0108,10] = 237;
+constraint task_start[F0109,1] = 197;
+constraint task_start[F0109,2] = 200;
+constraint task_start[F0109,3] = 200;
+constraint task_start[F0109,4] = 211;
+constraint task_start[F0109,5] = 211;
+constraint task_start[F0109,6] = 211;
+constraint task_start[F0109,7] = 211;
+constraint task_start[F0109,8] = 211;
+constraint task_start[F0109,9] = 228;
+constraint task_start[F0109,10] = 240;
+constraint task_start[F0110,1] = 196;
+constraint task_start[F0110,2] = 198;
+constraint task_start[F0110,3] = 198;
+constraint task_start[F0110,4] = 209;
+constraint task_start[F0110,5] = 209;
+constraint task_start[F0110,6] = 209;
+constraint task_start[F0110,7] = 209;
+constraint task_start[F0110,8] = 215;
+constraint task_start[F0110,9] = 226;
+constraint task_start[F0110,10] = 238;
+constraint task_start[F0111,1] = 198;
+constraint task_start[F0111,2] = 200;
+constraint task_start[F0111,3] = 200;
+constraint task_start[F0111,4] = 207;
+constraint task_start[F0111,5] = 207;
+constraint task_start[F0111,6] = 207;
+constraint task_start[F0111,7] = 207;
+constraint task_start[F0111,8] = 211;
+constraint task_start[F0111,9] = 223;
+constraint task_start[F0111,10] = 235;
+constraint task_start[F0112,1] = 198;
+constraint task_start[F0112,2] = 200;
+constraint task_start[F0112,3] = 200;
+constraint task_start[F0112,4] = 210;
+constraint task_start[F0112,5] = 210;
+constraint task_start[F0112,6] = 210;
+constraint task_start[F0112,7] = 210;
+constraint task_start[F0112,8] = 217;
+constraint task_start[F0112,9] = 226;
+constraint task_start[F0112,10] = 238;
+constraint task_start[F0113,1] = 199;
+constraint task_start[F0113,2] = 202;
+constraint task_start[F0113,3] = 202;
+constraint task_start[F0113,4] = 209;
+constraint task_start[F0113,5] = 209;
+constraint task_start[F0113,6] = 209;
+constraint task_start[F0113,7] = 209;
+constraint task_start[F0113,8] = 214;
+constraint task_start[F0113,9] = 225;
+constraint task_start[F0113,10] = 241;
+constraint task_start[F0114,1] = 197;
+constraint task_start[F0114,2] = 199;
+constraint task_start[F0114,3] = 199;
+constraint task_start[F0114,4] = 206;
+constraint task_start[F0114,5] = 206;
+constraint task_start[F0114,6] = 206;
+constraint task_start[F0114,7] = 206;
+constraint task_start[F0114,8] = 210;
+constraint task_start[F0114,9] = 222;
+constraint task_start[F0114,10] = 237;
+constraint task_start[F0115,1] = 199;
+constraint task_start[F0115,2] = 201;
+constraint task_start[F0115,3] = 201;
+constraint task_start[F0115,4] = 208;
+constraint task_start[F0115,5] = 208;
+constraint task_start[F0115,6] = 208;
+constraint task_start[F0115,7] = 208;
+constraint task_start[F0115,8] = 216;
+constraint task_start[F0115,9] = 225;
+constraint task_start[F0115,10] = 237;
+constraint task_start[F0116,1] = 195;
+constraint task_start[F0116,2] = 198;
+constraint task_start[F0116,3] = 198;
+constraint task_start[F0116,4] = 207;
+constraint task_start[F0116,5] = 207;
+constraint task_start[F0116,6] = 207;
+constraint task_start[F0116,7] = 207;
+constraint task_start[F0116,8] = 214;
+constraint task_start[F0116,9] = 222;
+constraint task_start[F0116,10] = 234;
+constraint task_start[F0117,1] = 198;
+constraint task_start[F0117,2] = 202;
+constraint task_start[F0117,3] = 202;
+constraint task_start[F0117,4] = 214;
+constraint task_start[F0117,5] = 214;
+constraint task_start[F0117,6] = 214;
+constraint task_start[F0117,7] = 214;
+constraint task_start[F0117,8] = 224;
+constraint task_start[F0117,9] = 258;
+constraint task_start[F0117,10] = 265;
+constraint task_start[F0117,11] = 299;
+constraint task_start[F0118,1] = 199;
+constraint task_start[F0118,2] = 201;
+constraint task_start[F0118,3] = 201;
+constraint task_start[F0118,4] = 211;
+constraint task_start[F0118,5] = 211;
+constraint task_start[F0118,6] = 211;
+constraint task_start[F0118,7] = 211;
+constraint task_start[F0118,8] = 218;
+constraint task_start[F0118,9] = 227;
+constraint task_start[F0118,10] = 241;
+constraint task_start[F0119,1] = 212;
+constraint task_start[F0119,2] = 215;
+constraint task_start[F0119,3] = 215;
+constraint task_start[F0119,4] = 225;
+constraint task_start[F0119,5] = 225;
+constraint task_start[F0119,6] = 225;
+constraint task_start[F0119,7] = 225;
+constraint task_start[F0119,8] = 231;
+constraint task_start[F0119,9] = 240;
+constraint task_start[F0119,10] = 252;
+constraint task_start[F0120,1] = 213;
+constraint task_start[F0120,2] = 215;
+constraint task_start[F0120,3] = 215;
+constraint task_start[F0120,4] = 224;
+constraint task_start[F0120,5] = 224;
+constraint task_start[F0120,6] = 224;
+constraint task_start[F0120,7] = 224;
+constraint task_start[F0120,8] = 227;
+constraint task_start[F0120,9] = 240;
+constraint task_start[F0120,10] = 255;
+constraint task_start[F0121,1] = 210;
+constraint task_start[F0121,2] = 213;
+constraint task_start[F0121,3] = 213;
+constraint task_start[F0121,4] = 223;
+constraint task_start[F0121,5] = 223;
+constraint task_start[F0121,6] = 223;
+constraint task_start[F0121,7] = 223;
+constraint task_start[F0121,8] = 228;
+constraint task_start[F0121,9] = 238;
+constraint task_start[F0121,10] = 253;
+constraint task_start[F0122,1] = 213;
+constraint task_start[F0122,2] = 216;
+constraint task_start[F0122,3] = 216;
+constraint task_start[F0122,4] = 223;
+constraint task_start[F0122,5] = 223;
+constraint task_start[F0122,6] = 223;
+constraint task_start[F0122,7] = 223;
+constraint task_start[F0122,8] = 233;
+constraint task_start[F0122,9] = 239;
+constraint task_start[F0122,10] = 256;
+constraint task_start[F0123,1] = 211;
+constraint task_start[F0123,2] = 214;
+constraint task_start[F0123,3] = 214;
+constraint task_start[F0123,4] = 224;
+constraint task_start[F0123,5] = 224;
+constraint task_start[F0123,6] = 224;
+constraint task_start[F0123,7] = 224;
+constraint task_start[F0123,8] = 231;
+constraint task_start[F0123,9] = 240;
+constraint task_start[F0123,10] = 257;
+constraint task_start[F0124,1] = 214;
+constraint task_start[F0124,2] = 216;
+constraint task_start[F0124,3] = 216;
+constraint task_start[F0124,4] = 223;
+constraint task_start[F0124,5] = 223;
+constraint task_start[F0124,6] = 223;
+constraint task_start[F0124,7] = 223;
+constraint task_start[F0124,8] = 233;
+constraint task_start[F0124,9] = 238;
+constraint task_start[F0124,10] = 253;
+constraint task_start[F0125,1] = 228;
+constraint task_start[F0125,2] = 230;
+constraint task_start[F0125,3] = 230;
+constraint task_start[F0125,4] = 237;
+constraint task_start[F0125,5] = 237;
+constraint task_start[F0125,6] = 237;
+constraint task_start[F0125,7] = 237;
+constraint task_start[F0125,8] = 246;
+constraint task_start[F0125,9] = 254;
+constraint task_start[F0125,10] = 270;
+constraint task_start[F0126,1] = 228;
+constraint task_start[F0126,2] = 230;
+constraint task_start[F0126,3] = 230;
+constraint task_start[F0126,4] = 239;
+constraint task_start[F0126,5] = 239;
+constraint task_start[F0126,6] = 239;
+constraint task_start[F0126,7] = 239;
+constraint task_start[F0126,8] = 255;
+constraint task_start[F0126,9] = 278;
+constraint task_start[F0126,10] = 312;
+constraint task_start[F0127,1] = 226;
+constraint task_start[F0127,2] = 229;
+constraint task_start[F0127,3] = 229;
+constraint task_start[F0127,4] = 238;
+constraint task_start[F0127,5] = 238;
+constraint task_start[F0127,6] = 238;
+constraint task_start[F0127,7] = 238;
+constraint task_start[F0127,8] = 240;
+constraint task_start[F0127,9] = 254;
+constraint task_start[F0127,10] = 271;
+constraint task_start[F0128,1] = 227;
+constraint task_start[F0128,2] = 230;
+constraint task_start[F0128,3] = 230;
+constraint task_start[F0128,4] = 237;
+constraint task_start[F0128,5] = 237;
+constraint task_start[F0128,6] = 237;
+constraint task_start[F0128,7] = 237;
+constraint task_start[F0128,8] = 242;
+constraint task_start[F0128,9] = 252;
+constraint task_start[F0128,10] = 268;
+constraint task_start[F0129,1] = 227;
+constraint task_start[F0129,2] = 229;
+constraint task_start[F0129,3] = 229;
+constraint task_start[F0129,4] = 236;
+constraint task_start[F0129,5] = 236;
+constraint task_start[F0129,6] = 236;
+constraint task_start[F0129,7] = 236;
+constraint task_start[F0129,8] = 244;
+constraint task_start[F0129,9] = 252;
+constraint task_start[F0129,10] = 268;
+constraint task_start[F0130,1] = 227;
+constraint task_start[F0130,2] = 229;
+constraint task_start[F0130,3] = 229;
+constraint task_start[F0130,4] = 239;
+constraint task_start[F0130,5] = 239;
+constraint task_start[F0130,6] = 239;
+constraint task_start[F0130,7] = 239;
+constraint task_start[F0130,8] = 240;
+constraint task_start[F0130,9] = 253;
+constraint task_start[F0130,10] = 269;
+constraint task_start[F0131,1] = 227;
+constraint task_start[F0131,2] = 231;
+constraint task_start[F0131,3] = 231;
+constraint task_start[F0131,4] = 242;
+constraint task_start[F0131,5] = 242;
+constraint task_start[F0131,6] = 242;
+constraint task_start[F0131,7] = 242;
+constraint task_start[F0131,8] = 255;
+constraint task_start[F0131,9] = 284;
+constraint task_start[F0131,10] = 290;
+constraint task_start[F0131,11] = 323;
+constraint task_start[F0132,1] = 243;
+constraint task_start[F0132,2] = 246;
+constraint task_start[F0132,3] = 246;
+constraint task_start[F0132,4] = 257;
+constraint task_start[F0132,5] = 257;
+constraint task_start[F0132,6] = 257;
+constraint task_start[F0132,7] = 257;
+constraint task_start[F0132,8] = 259;
+constraint task_start[F0132,9] = 273;
+constraint task_start[F0132,10] = 287;
+constraint task_start[F0133,1] = 242;
+constraint task_start[F0133,2] = 244;
+constraint task_start[F0133,3] = 244;
+constraint task_start[F0133,4] = 251;
+constraint task_start[F0133,5] = 251;
+constraint task_start[F0133,6] = 251;
+constraint task_start[F0133,7] = 251;
+constraint task_start[F0133,8] = 259;
+constraint task_start[F0133,9] = 267;
+constraint task_start[F0133,10] = 280;
+constraint task_start[F0134,1] = 244;
+constraint task_start[F0134,2] = 246;
+constraint task_start[F0134,3] = 246;
+constraint task_start[F0134,4] = 253;
+constraint task_start[F0134,5] = 253;
+constraint task_start[F0134,6] = 253;
+constraint task_start[F0134,7] = 253;
+constraint task_start[F0134,8] = 257;
+constraint task_start[F0134,9] = 270;
+constraint task_start[F0134,10] = 284;
+constraint task_start[F0135,1] = 240;
+constraint task_start[F0135,2] = 243;
+constraint task_start[F0135,3] = 243;
+constraint task_start[F0135,4] = 250;
+constraint task_start[F0135,5] = 250;
+constraint task_start[F0135,6] = 250;
+constraint task_start[F0135,7] = 250;
+constraint task_start[F0135,8] = 258;
+constraint task_start[F0135,9] = 264;
+constraint task_start[F0135,10] = 277;
+constraint task_start[F0136,1] = 243;
+constraint task_start[F0136,2] = 245;
+constraint task_start[F0136,3] = 245;
+constraint task_start[F0136,4] = 254;
+constraint task_start[F0136,5] = 254;
+constraint task_start[F0136,6] = 254;
+constraint task_start[F0136,7] = 254;
+constraint task_start[F0136,8] = 256;
+constraint task_start[F0136,9] = 270;
+constraint task_start[F0136,10] = 286;
+constraint task_start[F0137,1] = 241;
+constraint task_start[F0137,2] = 243;
+constraint task_start[F0137,3] = 243;
+constraint task_start[F0137,4] = 251;
+constraint task_start[F0137,5] = 251;
+constraint task_start[F0137,6] = 251;
+constraint task_start[F0137,7] = 251;
+constraint task_start[F0137,8] = 265;
+constraint task_start[F0137,9] = 295;
+constraint task_start[F0137,10] = 328;
+constraint task_start[F0138,1] = 243;
+constraint task_start[F0138,2] = 245;
+constraint task_start[F0138,3] = 245;
+constraint task_start[F0138,4] = 255;
+constraint task_start[F0138,5] = 255;
+constraint task_start[F0138,6] = 255;
+constraint task_start[F0138,7] = 255;
+constraint task_start[F0138,8] = 262;
+constraint task_start[F0138,9] = 269;
+constraint task_start[F0138,10] = 283;
+constraint task_start[F0139,1] = 243;
+constraint task_start[F0139,2] = 245;
+constraint task_start[F0139,3] = 245;
+constraint task_start[F0139,4] = 255;
+constraint task_start[F0139,5] = 255;
+constraint task_start[F0139,6] = 255;
+constraint task_start[F0139,7] = 255;
+constraint task_start[F0139,8] = 256;
+constraint task_start[F0139,9] = 272;
+constraint task_start[F0139,10] = 286;
+constraint task_start[F0140,1] = 241;
+constraint task_start[F0140,2] = 244;
+constraint task_start[F0140,3] = 244;
+constraint task_start[F0140,4] = 253;
+constraint task_start[F0140,5] = 253;
+constraint task_start[F0140,6] = 253;
+constraint task_start[F0140,7] = 253;
+constraint task_start[F0140,8] = 259;
+constraint task_start[F0140,9] = 269;
+constraint task_start[F0140,10] = 286;
+constraint task_start[F0141,1] = 242;
+constraint task_start[F0141,2] = 244;
+constraint task_start[F0141,3] = 244;
+constraint task_start[F0141,4] = 253;
+constraint task_start[F0141,5] = 253;
+constraint task_start[F0141,6] = 253;
+constraint task_start[F0141,7] = 253;
+constraint task_start[F0141,8] = 260;
+constraint task_start[F0141,9] = 270;
+constraint task_start[F0141,10] = 284;
+constraint task_start[F0142,1] = 255;
+constraint task_start[F0142,2] = 257;
+constraint task_start[F0142,3] = 257;
+constraint task_start[F0142,4] = 266;
+constraint task_start[F0142,5] = 266;
+constraint task_start[F0142,6] = 266;
+constraint task_start[F0142,7] = 266;
+constraint task_start[F0142,8] = 274;
+constraint task_start[F0142,9] = 283;
+constraint task_start[F0142,10] = 298;
+constraint task_start[F0143,1] = 257;
+constraint task_start[F0143,2] = 259;
+constraint task_start[F0143,3] = 259;
+constraint task_start[F0143,4] = 267;
+constraint task_start[F0143,5] = 267;
+constraint task_start[F0143,6] = 267;
+constraint task_start[F0143,7] = 267;
+constraint task_start[F0143,8] = 272;
+constraint task_start[F0143,9] = 284;
+constraint task_start[F0143,10] = 296;
+constraint task_start[F0144,1] = 256;
+constraint task_start[F0144,2] = 259;
+constraint task_start[F0144,3] = 259;
+constraint task_start[F0144,4] = 269;
+constraint task_start[F0144,5] = 269;
+constraint task_start[F0144,6] = 269;
+constraint task_start[F0144,7] = 269;
+constraint task_start[F0144,8] = 273;
+constraint task_start[F0144,9] = 284;
+constraint task_start[F0144,10] = 296;
+constraint task_start[F0145,1] = 256;
+constraint task_start[F0145,2] = 259;
+constraint task_start[F0145,3] = 259;
+constraint task_start[F0145,4] = 268;
+constraint task_start[F0145,5] = 268;
+constraint task_start[F0145,6] = 268;
+constraint task_start[F0145,7] = 268;
+constraint task_start[F0145,8] = 281;
+constraint task_start[F0145,9] = 309;
+constraint task_start[F0145,10] = 317;
+constraint task_start[F0145,11] = 350;
+constraint task_start[F0146,1] = 259;
+constraint task_start[F0146,2] = 261;
+constraint task_start[F0146,3] = 261;
+constraint task_start[F0146,4] = 268;
+constraint task_start[F0146,5] = 268;
+constraint task_start[F0146,6] = 268;
+constraint task_start[F0146,7] = 268;
+constraint task_start[F0146,8] = 277;
+constraint task_start[F0146,9] = 283;
+constraint task_start[F0146,10] = 296;
+constraint task_start[F0147,1] = 256;
+constraint task_start[F0147,2] = 259;
+constraint task_start[F0147,3] = 259;
+constraint task_start[F0147,4] = 270;
+constraint task_start[F0147,5] = 270;
+constraint task_start[F0147,6] = 270;
+constraint task_start[F0147,7] = 270;
+constraint task_start[F0147,8] = 275;
+constraint task_start[F0147,9] = 284;
+constraint task_start[F0147,10] = 300;
+constraint task_start[F0148,1] = 255;
+constraint task_start[F0148,2] = 257;
+constraint task_start[F0148,3] = 257;
+constraint task_start[F0148,4] = 264;
+constraint task_start[F0148,5] = 264;
+constraint task_start[F0148,6] = 264;
+constraint task_start[F0148,7] = 264;
+constraint task_start[F0148,8] = 270;
+constraint task_start[F0148,9] = 281;
+constraint task_start[F0148,10] = 293;
+constraint task_start[F0149,1] = 255;
+constraint task_start[F0149,2] = 257;
+constraint task_start[F0149,3] = 257;
+constraint task_start[F0149,4] = 267;
+constraint task_start[F0149,5] = 267;
+constraint task_start[F0149,6] = 267;
+constraint task_start[F0149,7] = 267;
+constraint task_start[F0149,8] = 273;
+constraint task_start[F0149,9] = 284;
+constraint task_start[F0149,10] = 297;
+constraint task_start[F0150,1] = 272;
+constraint task_start[F0150,2] = 275;
+constraint task_start[F0150,3] = 275;
+constraint task_start[F0150,4] = 286;
+constraint task_start[F0150,5] = 286;
+constraint task_start[F0150,6] = 286;
+constraint task_start[F0150,7] = 286;
+constraint task_start[F0150,8] = 287;
+constraint task_start[F0150,9] = 303;
+constraint task_start[F0150,10] = 318;
+constraint task_start[F0151,1] = 274;
+constraint task_start[F0151,2] = 276;
+constraint task_start[F0151,3] = 276;
+constraint task_start[F0151,4] = 286;
+constraint task_start[F0151,5] = 286;
+constraint task_start[F0151,6] = 286;
+constraint task_start[F0151,7] = 286;
+constraint task_start[F0151,8] = 289;
+constraint task_start[F0151,9] = 303;
+constraint task_start[F0151,10] = 320;
+constraint task_start[F0152,1] = 272;
+constraint task_start[F0152,2] = 275;
+constraint task_start[F0152,3] = 275;
+constraint task_start[F0152,4] = 282;
+constraint task_start[F0152,5] = 282;
+constraint task_start[F0152,6] = 282;
+constraint task_start[F0152,7] = 282;
+constraint task_start[F0152,8] = 288;
+constraint task_start[F0152,9] = 298;
+constraint task_start[F0152,10] = 310;
+constraint task_start[F0153,1] = 272;
+constraint task_start[F0153,2] = 275;
+constraint task_start[F0153,3] = 275;
+constraint task_start[F0153,4] = 286;
+constraint task_start[F0153,5] = 286;
+constraint task_start[F0153,6] = 286;
+constraint task_start[F0153,7] = 286;
+constraint task_start[F0153,8] = 291;
+constraint task_start[F0153,9] = 302;
+constraint task_start[F0153,10] = 315;
+constraint task_start[F0154,1] = 271;
+constraint task_start[F0154,2] = 274;
+constraint task_start[F0154,3] = 274;
+constraint task_start[F0154,4] = 282;
+constraint task_start[F0154,5] = 282;
+constraint task_start[F0154,6] = 282;
+constraint task_start[F0154,7] = 282;
+constraint task_start[F0154,8] = 289;
+constraint task_start[F0154,9] = 299;
+constraint task_start[F0154,10] = 312;
+constraint task_start[F0155,1] = 274;
+constraint task_start[F0155,2] = 277;
+constraint task_start[F0155,3] = 277;
+constraint task_start[F0155,4] = 288;
+constraint task_start[F0155,5] = 288;
+constraint task_start[F0155,6] = 288;
+constraint task_start[F0155,7] = 288;
+constraint task_start[F0155,8] = 290;
+constraint task_start[F0155,9] = 302;
+constraint task_start[F0155,10] = 314;
+constraint task_start[F0156,1] = 270;
+constraint task_start[F0156,2] = 272;
+constraint task_start[F0156,3] = 272;
+constraint task_start[F0156,4] = 283;
+constraint task_start[F0156,5] = 283;
+constraint task_start[F0156,6] = 283;
+constraint task_start[F0156,7] = 283;
+constraint task_start[F0156,8] = 284;
+constraint task_start[F0156,9] = 299;
+constraint task_start[F0156,10] = 312;
+constraint task_start[F0157,1] = 287;
+constraint task_start[F0157,2] = 289;
+constraint task_start[F0157,3] = 289;
+constraint task_start[F0157,4] = 297;
+constraint task_start[F0157,5] = 297;
+constraint task_start[F0157,6] = 297;
+constraint task_start[F0157,7] = 297;
+constraint task_start[F0157,8] = 303;
+constraint task_start[F0157,9] = 313;
+constraint task_start[F0157,10] = 325;
+constraint task_start[F0158,1] = 288;
+constraint task_start[F0158,2] = 290;
+constraint task_start[F0158,3] = 290;
+constraint task_start[F0158,4] = 300;
+constraint task_start[F0158,5] = 300;
+constraint task_start[F0158,6] = 300;
+constraint task_start[F0158,7] = 300;
+constraint task_start[F0158,8] = 303;
+constraint task_start[F0158,9] = 315;
+constraint task_start[F0158,10] = 330;
+constraint task_start[F0159,1] = 289;
+constraint task_start[F0159,2] = 309;
+constraint task_start[F0159,3] = 309;
+constraint task_start[F0159,4] = 329;
+constraint task_start[F0160,1] = 288;
+constraint task_start[F0160,2] = 308;
+constraint task_start[F0160,3] = 308;
+constraint task_start[F0160,4] = 328;
+constraint task_start[F0161,1] = 289;
+constraint task_start[F0161,2] = 294;
+constraint task_start[F0161,3] = 294;
+constraint task_start[F0161,4] = 303;
+constraint task_start[F0161,5] = 303;
+constraint task_start[F0161,6] = 303;
+constraint task_start[F0161,7] = 303;
+constraint task_start[F0161,8] = 319;
+constraint task_start[F0161,9] = 347;
+constraint task_start[F0161,10] = 353;
+constraint task_start[F0161,11] = 384;
+constraint task_start[F0162,1] = 304;
+constraint task_start[F0162,2] = 307;
+constraint task_start[F0162,3] = 307;
+constraint task_start[F0162,4] = 318;
+constraint task_start[F0162,5] = 318;
+constraint task_start[F0162,6] = 318;
+constraint task_start[F0162,7] = 318;
+constraint task_start[F0162,8] = 318;
+constraint task_start[F0162,9] = 334;
+constraint task_start[F0162,10] = 349;
+constraint task_start[F0163,1] = 303;
+constraint task_start[F0163,2] = 306;
+constraint task_start[F0163,3] = 306;
+constraint task_start[F0163,4] = 316;
+constraint task_start[F0163,5] = 316;
+constraint task_start[F0163,6] = 316;
+constraint task_start[F0163,7] = 316;
+constraint task_start[F0163,8] = 319;
+constraint task_start[F0163,9] = 334;
+constraint task_start[F0163,10] = 338;
+constraint task_start[F0163,11] = 353;
+constraint task_start[F0164,1] = 316;
+constraint task_start[F0164,2] = 318;
+constraint task_start[F0164,3] = 318;
+constraint task_start[F0164,4] = 326;
+constraint task_start[F0164,5] = 326;
+constraint task_start[F0164,6] = 326;
+constraint task_start[F0164,7] = 326;
+constraint task_start[F0164,8] = 329;
+constraint task_start[F0164,9] = 342;
+constraint task_start[F0164,10] = 357;
+constraint task_start[F0165,1] = 316;
+constraint task_start[F0165,2] = 319;
+constraint task_start[F0165,3] = 319;
+constraint task_start[F0165,4] = 326;
+constraint task_start[F0165,5] = 326;
+constraint task_start[F0165,6] = 326;
+constraint task_start[F0165,7] = 326;
+constraint task_start[F0165,8] = 331;
+constraint task_start[F0165,9] = 342;
+constraint task_start[F0165,10] = 359;
+constraint task_start[F0166,1] = 318;
+constraint task_start[F0166,2] = 321;
+constraint task_start[F0166,3] = 321;
+constraint task_start[F0166,4] = 331;
+constraint task_start[F0166,5] = 331;
+constraint task_start[F0166,6] = 331;
+constraint task_start[F0166,7] = 331;
+constraint task_start[F0166,8] = 339;
+constraint task_start[F0166,9] = 348;
+constraint task_start[F0166,10] = 353;
+constraint task_start[F0166,11] = 368;
+constraint task_start[F0167,1] = 334;
+constraint task_start[F0167,2] = 337;
+constraint task_start[F0167,3] = 337;
+constraint task_start[F0167,4] = 347;
+constraint task_start[F0167,5] = 347;
+constraint task_start[F0167,6] = 347;
+constraint task_start[F0167,7] = 347;
+constraint task_start[F0167,8] = 352;
+constraint task_start[F0167,9] = 364;
+constraint task_start[F0167,10] = 378;
+constraint task_start[F0168,1] = 330;
+constraint task_start[F0168,2] = 332;
+constraint task_start[F0168,3] = 332;
+constraint task_start[F0168,4] = 343;
+constraint task_start[F0168,5] = 343;
+constraint task_start[F0168,6] = 343;
+constraint task_start[F0168,7] = 343;
+constraint task_start[F0168,8] = 344;
+constraint task_start[F0168,9] = 358;
+constraint task_start[F0168,10] = 375;
+constraint task_start[F0169,1] = 345;
+constraint task_start[F0169,2] = 365;
+constraint task_start[F0169,3] = 365;
+constraint task_start[F0169,4] = 385;
+constraint task_start[F0170,1] = 346;
+constraint task_start[F0170,2] = 349;
+constraint task_start[F0170,3] = 349;
+constraint task_start[F0170,4] = 359;
+constraint task_start[F0170,5] = 359;
+constraint task_start[F0170,6] = 359;
+constraint task_start[F0170,7] = 359;
+constraint task_start[F0170,8] = 364;
+constraint task_start[F0170,9] = 374;
+constraint task_start[F0170,10] = 387;
+constraint task_start[F0171,1] = 346;
+constraint task_start[F0171,2] = 350;
+constraint task_start[F0171,3] = 350;
+constraint task_start[F0171,4] = 360;
+constraint task_start[F0171,5] = 360;
+constraint task_start[F0171,6] = 360;
+constraint task_start[F0171,7] = 360;
+constraint task_start[F0171,8] = 373;
+constraint task_start[F0171,9] = 409;
+constraint task_start[F0171,10] = 417;
+constraint task_start[F0171,11] = 451;
+constraint task_start[F0172,1] = 346;
+constraint task_start[F0172,2] = 349;
+constraint task_start[F0172,3] = 349;
+constraint task_start[F0172,4] = 357;
+constraint task_start[F0172,5] = 357;
+constraint task_start[F0172,6] = 357;
+constraint task_start[F0172,7] = 357;
+constraint task_start[F0172,8] = 366;
+constraint task_start[F0172,9] = 372;
+constraint task_start[F0172,10] = 385;
+constraint task_start[F0173,1] = 364;
+constraint task_start[F0173,2] = 366;
+constraint task_start[F0173,3] = 366;
+constraint task_start[F0173,4] = 373;
+constraint task_start[F0173,5] = 373;
+constraint task_start[F0173,6] = 373;
+constraint task_start[F0173,7] = 373;
+constraint task_start[F0173,8] = 381;
+constraint task_start[F0173,9] = 387;
+constraint task_start[F0173,10] = 399;
+constraint task_start[F0174,1] = 361;
+constraint task_start[F0174,2] = 381;
+constraint task_start[F0174,3] = 381;
+constraint task_start[F0174,4] = 401;
+constraint task_start[F0175,1] = 361;
+constraint task_start[F0175,2] = 363;
+constraint task_start[F0175,3] = 363;
+constraint task_start[F0175,4] = 370;
+constraint task_start[F0175,5] = 370;
+constraint task_start[F0175,6] = 370;
+constraint task_start[F0175,7] = 370;
+constraint task_start[F0175,8] = 380;
+constraint task_start[F0175,9] = 386;
+constraint task_start[F0175,10] = 403;
+constraint task_start[F0176,1] = 360;
+constraint task_start[F0176,2] = 362;
+constraint task_start[F0176,3] = 362;
+constraint task_start[F0176,4] = 371;
+constraint task_start[F0176,5] = 371;
+constraint task_start[F0176,6] = 371;
+constraint task_start[F0176,7] = 371;
+constraint task_start[F0176,8] = 379;
+constraint task_start[F0176,9] = 387;
+constraint task_start[F0176,10] = 401;
+constraint task_start[F0177,1] = 362;
+constraint task_start[F0177,2] = 364;
+constraint task_start[F0177,3] = 364;
+constraint task_start[F0177,4] = 374;
+constraint task_start[F0177,5] = 374;
+constraint task_start[F0177,6] = 374;
+constraint task_start[F0177,7] = 374;
+constraint task_start[F0177,8] = 376;
+constraint task_start[F0177,9] = 390;
+constraint task_start[F0177,10] = 404;
+constraint task_start[F0178,1] = 364;
+constraint task_start[F0178,2] = 366;
+constraint task_start[F0178,3] = 366;
+constraint task_start[F0178,4] = 377;
+constraint task_start[F0178,5] = 377;
+constraint task_start[F0178,6] = 377;
+constraint task_start[F0178,7] = 377;
+constraint task_start[F0178,8] = 378;
+constraint task_start[F0178,9] = 392;
+constraint task_start[F0178,10] = 409;
+constraint task_start[F0179,1] = 378;
+constraint task_start[F0179,2] = 380;
+constraint task_start[F0179,3] = 380;
+constraint task_start[F0179,4] = 387;
+constraint task_start[F0179,5] = 387;
+constraint task_start[F0179,6] = 387;
+constraint task_start[F0179,7] = 387;
+constraint task_start[F0179,8] = 397;
+constraint task_start[F0179,9] = 402;
+constraint task_start[F0179,10] = 415;
+constraint task_start[F0180,1] = 375;
+constraint task_start[F0180,2] = 377;
+constraint task_start[F0180,3] = 377;
+constraint task_start[F0180,4] = 388;
+constraint task_start[F0180,5] = 388;
+constraint task_start[F0180,6] = 388;
+constraint task_start[F0180,7] = 388;
+constraint task_start[F0180,8] = 393;
+constraint task_start[F0180,9] = 405;
+constraint task_start[F0180,10] = 421;
+constraint task_start[F0181,1] = 394;
+constraint task_start[F0181,2] = 396;
+constraint task_start[F0181,3] = 396;
+constraint task_start[F0181,4] = 403;
+constraint task_start[F0181,5] = 403;
+constraint task_start[F0181,6] = 403;
+constraint task_start[F0181,7] = 403;
+constraint task_start[F0181,8] = 411;
+constraint task_start[F0181,9] = 420;
+constraint task_start[F0181,10] = 437;
+constraint task_start[F0182,1] = 358;
+constraint task_start[F0182,2] = 363;
+constraint task_start[F0182,3] = 363;
+constraint task_start[F0182,4] = 374;
+constraint task_start[F0182,5] = 374;
+constraint task_start[F0182,6] = 374;
+constraint task_start[F0182,7] = 374;
+constraint task_start[F0182,8] = 386;
+constraint task_start[F0182,9] = 419;
+constraint task_start[F0182,10] = 427;
+constraint task_start[F0182,11] = 461;
+constraint task_start[F0183,1] = 390;
+constraint task_start[F0183,2] = 392;
+constraint task_start[F0183,3] = 392;
+constraint task_start[F0183,4] = 400;
+constraint task_start[F0183,5] = 400;
+constraint task_start[F0183,6] = 400;
+constraint task_start[F0183,7] = 400;
+constraint task_start[F0183,8] = 404;
+constraint task_start[F0183,9] = 416;
+constraint task_start[F0183,10] = 431;
+constraint task_start[F0184,1] = 364;
+constraint task_start[F0184,2] = 369;
+constraint task_start[F0184,3] = 369;
+constraint task_start[F0184,4] = 381;
+constraint task_start[F0184,5] = 381;
+constraint task_start[F0184,6] = 381;
+constraint task_start[F0184,7] = 381;
+constraint task_start[F0184,8] = 392;
+constraint task_start[F0184,9] = 423;
+constraint task_start[F0184,10] = 428;
+constraint task_start[F0184,11] = 465;
+constraint task_start[F0185,1] = 424;
+constraint task_start[F0185,2] = 427;
+constraint task_start[F0185,3] = 427;
+constraint task_start[F0185,4] = 437;
+constraint task_start[F0185,5] = 437;
+constraint task_start[F0185,6] = 437;
+constraint task_start[F0185,7] = 437;
+constraint task_start[F0185,8] = 439;
+constraint task_start[F0185,9] = 453;
+constraint task_start[F0185,10] = 468;
+constraint task_start[F0186,1] = 421;
+constraint task_start[F0186,2] = 424;
+constraint task_start[F0186,3] = 424;
+constraint task_start[F0186,4] = 434;
+constraint task_start[F0186,5] = 434;
+constraint task_start[F0186,6] = 434;
+constraint task_start[F0186,7] = 434;
+constraint task_start[F0186,8] = 438;
+constraint task_start[F0186,9] = 451;
+constraint task_start[F0186,10] = 464;
+constraint task_start[F0187,1] = 358;
+constraint task_start[F0187,2] = 363;
+constraint task_start[F0187,3] = 363;
+constraint task_start[F0187,4] = 373;
+constraint task_start[F0187,5] = 373;
+constraint task_start[F0187,6] = 373;
+constraint task_start[F0187,7] = 373;
+constraint task_start[F0187,8] = 391;
+constraint task_start[F0187,9] = 418;
+constraint task_start[F0187,10] = 425;
+constraint task_start[F0187,11] = 462;
+solve :: seq_search([
+  int_search(
+    [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+    smallest, indomain_min, complete
+  ),
+  % Once the time line is fixed, try to keep teams unused before assigning
+  % individual tasks.  This turns the distinct-team objective into an early
+  % branching decision instead of discovering cost only after all assignments.
+  bool_search([used[l] | l in LaborID], first_fail, indomain_min, complete),
+  int_search(
+    [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
+    first_fail, indomain_min, complete
+  ),
+  int_search([gate[f] | f in FlightID], first_fail, indomain_min, complete)
+]) satisfy;
+
+% ---- Output (do not modify) ----
+function string: row_gate() =
+  "[" ++ concat([ (if f = min(FlightID) then "" else ", " endif) ++
+                  "\"" ++ show(fix(gate[f])) ++ "\"" | f in FlightID ]) ++ "]";
+function string: row2d_int(array[FlightID, TASK_IDX] of var int: a) =
+  "[" ++ concat([ (if f = min(FlightID) then "" else ", " endif) ++ "[" ++
+                  concat([ (if t = 1 then "" else ", " endif) ++ show(fix(a[f, t])) | t in TASK_IDX ]) ++ "]"
+                  | f in FlightID ]) ++ "]";
+function string: row_task_labor() =
+  "[" ++ concat([ (if f = min(FlightID) then "" else ", " endif) ++ "[" ++
+                  concat([(if t = 1 then "" else ", " endif) ++ "\"" ++ show(fix(task_labor[f, t])) ++ "\""
+                         | t in TASK_IDX]) ++ "]"
+                  | f in FlightID ]) ++ "]";
+
+output [
+    "{\n",
+    "  \"gate\":       ", row_gate(), ",\n",
+    "  \"task_start\": ", row2d_int(task_start), ",\n",
+    "  \"task_labor\": ", row_task_labor(), ",\n",
+    "  \"cost\":       ", show(fix(cost)), "\n",
+    "}\n"
+];

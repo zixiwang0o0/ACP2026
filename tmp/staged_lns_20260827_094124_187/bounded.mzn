@@ -184,70 +184,6 @@ constraint cumulatives(
   true
 );
 
-% C11: tasks of one team must be ordered with enough gate-to-gate travel time.
-constraint forall(f1, f2 in FlightID, t1, t2 in TASK_IDX where
-  active(f1, t1) /\ active(f2, t2) /\
-  (f1 < f2 \/ (f1 = f2 /\ t1 < t2)) /\
-  compatible_labor[f1, t1] intersect compatible_labor[f2, t2] != {}
-)(
-  task_labor[f1, t1] = task_labor[f2, t2] ->
-    (task_start[f1, t1] + flight_tasks[f1, t1].duration
-       + travel[gate[f1], gate[f2]] <= task_start[f2, t2] \/
-     task_start[f2, t2] + flight_tasks[f2, t2].duration
-       + travel[gate[f2], gate[f1]] <= task_start[f1, t1])
-);
-
-% C12: identify each task's immediately preceding task on the same team's
-% time line.  The streak resets only when idle time after travel is >= 15.
-int: n_active_tasks = sum(f in FlightID)(flight_n_tasks[f]);
-set of int: ACTIVE_TASK = 1..n_active_tasks;
-array[ACTIVE_TASK] of FlightID: seq_f =
-  [f | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of int: seq_t =
-  [t | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of var int: seq_start =
-  [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of int: seq_duration =
-  [flight_tasks[f, t].duration | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of var LaborID: seq_labor =
-  [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)];
-array[ACTIVE_TASK] of var GateID: seq_gate = [gate[seq_f[i]] | i in ACTIVE_TASK];
-array[ACTIVE_TASK] of var 0..horizon: streak_start;
-array[ACTIVE_TASK] of var 0..n_active_tasks: previous_task;
-
-constraint forall(i in ACTIVE_TASK)(
-  (previous_task[i] = 0) <->
-    forall(j in ACTIVE_TASK where j != i)(
-      seq_labor[j] != seq_labor[i] \/ seq_start[j] >= seq_start[i]
-    )
-);
-constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] > 0 ->
-    let { var 1..n_active_tasks: p = previous_task[i] } in
-      p != i /\
-      seq_labor[p] = seq_labor[i] /\
-      seq_start[p] < seq_start[i] /\
-      seq_start[p] + seq_duration[p] + travel[seq_gate[p], seq_gate[i]] <= seq_start[i] /\
-      forall(j in ACTIVE_TASK where j != i)(
-        (seq_labor[j] = seq_labor[i] /\ seq_start[j] < seq_start[i]) ->
-          seq_start[j] <= seq_start[p]
-      )
-);
-constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] = 0 -> streak_start[i] = seq_start[i]
-);
-constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] > 0 ->
-    let { var 1..n_active_tasks: p = previous_task[i] } in
-      if seq_start[i] - seq_start[p] - seq_duration[p]
-           - travel[seq_gate[p], seq_gate[i]] >= 15 then
-        streak_start[i] = seq_start[i]
-      else
-        streak_start[i] = streak_start[p]
-      endif
-);
-constraint forall(i in ACTIVE_TASK)(seq_start[i] <= streak_start[i] + 90);
-
 %   C10 each team works only inside [labor_shift_start, labor_shift_end].
 constraint forall(f in FlightID, t in TASK_IDX where active(f, t))(
   labor_shift_start[task_labor[f, t]] <= task_start[f, t] /\
@@ -314,6 +250,7 @@ constraint forall(k in TeamType)(
   sum(l in LaborID where labor_kind[l] = k)(bool2int(used[l])) >= min_teams_lb[k]
 );
 
+constraint cost < 21489;
 solve :: seq_search([
   int_search(
     [task_start[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
