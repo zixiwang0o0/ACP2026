@@ -106,7 +106,10 @@ def build_tasks(data: dict, incumbent: dict) -> tuple[list[Task], dict[tuple[int
     return tasks, by_flight_position
 
 
-def solve(data: dict, incumbent: dict, seconds: float, workers: int, optimize: bool) -> dict:
+def solve(
+    data: dict, incumbent: dict, seconds: float, workers: int,
+    optimize: bool, max_successors: int,
+) -> dict:
     tasks, task_at = build_tasks(data, incumbent)
     model = cp_model.CpModel()
     horizon = data["horizon"]
@@ -161,16 +164,48 @@ def solve(data: dict, incumbent: dict, seconds: float, workers: int, optimize: b
     first = [model.NewBoolVar(f"first_{i}") for i in range(len(tasks))]
     transitions = []
     arc_count = 0
+    tasks_by_team_kind: dict[str, list[int]] = {}
+    for task in tasks:
+        tasks_by_team_kind.setdefault(task.team_kind, []).append(task.index)
+
     for i, left in enumerate(tasks):
         left_candidates = set(left.candidates)
-        for j, right in enumerate(tasks):
-            if i == j or left.team_kind != right.team_kind:
+        possible_successors = []
+        # Enumerate only the matching TeamType bucket, not every task pair.
+        for j in tasks_by_team_kind[left.team_kind]:
+            if i == j:
                 continue
-            if left_candidates.isdisjoint(right.candidates):
+            right = tasks[j]
+            common_labor = left_candidates.intersection(right.candidates)
+            if not common_labor:
                 continue
             travel = data["travel"][left.gate][right.gate]
             if left.release + left.duration + travel > right.deadline - right.duration:
                 continue
+            # Stronger safe pruning: at least one common LaborID must be able
+            # to execute this order wholly inside its shift and task windows.
+            shift_feasible = False
+            for l in common_labor:
+                left_start = max(left.release, data["labor_shift_start"][l])
+                right_start = max(
+                    right.release,
+                    left_start + left.duration + travel,
+                    data["labor_shift_start"][l],
+                )
+                if (left_start + left.duration <= data["labor_shift_end"][l]
+                        and right_start + right.duration
+                        <= min(right.deadline, data["labor_shift_end"][l])):
+                    shift_feasible = True
+                    break
+            if not shift_feasible:
+                continue
+            distance = max(0, right.release - left.release - left.duration - travel)
+            possible_successors.append((distance, right.deadline, j, travel))
+
+        possible_successors.sort()
+        if max_successors > 0:
+            possible_successors = possible_successors[:max_successors]
+        for _, _, j, travel in possible_successors:
             arc = model.NewBoolVar(f"arc_{i}_{j}")
             arc_count += 1
             incoming[j].append(arc)
@@ -267,14 +302,34 @@ def main() -> None:
     parser.add_argument("--seconds", type=float, default=120.0)
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--optimize", action="store_true")
-    args = parser.parse_args()
-    solution = solve(
-        load_json(args.data),
-        load_json(args.incumbent),
-        args.seconds,
-        args.workers,
-        args.optimize,
+    parser.add_argument("--max-successors", type=int, default=16)
+    parser.add_argument(
+        "--adaptive", action="store_true",
+        help="retry infeasible sparse models with 16, 32, then 64 successors",
     )
+    args = parser.parse_args()
+    data = load_json(args.data)
+    incumbent = load_json(args.incumbent)
+    levels = [args.max_successors]
+    if args.adaptive:
+        levels = [k for k in (16, 32, 64) if k >= args.max_successors]
+        if not levels:
+            levels = [args.max_successors]
+    solution = None
+    last_error = None
+    for level in levels:
+        print(f"max_successors={level}")
+        try:
+            solution = solve(
+                data, incumbent, args.seconds, args.workers,
+                args.optimize, level,
+            )
+            break
+        except RuntimeError as error:
+            last_error = error
+            print(f"level={level} failed: {error}")
+    if solution is None:
+        raise last_error or RuntimeError("adaptive search produced no solution")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(solution, indent=2) + "\n", encoding="utf-8")
 
