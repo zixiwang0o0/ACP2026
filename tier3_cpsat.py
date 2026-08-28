@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import heapq
 import json
 import sys
 from dataclasses import dataclass
@@ -58,6 +59,8 @@ class Task:
     deadline: int
     gate: int
     candidates: tuple[int, ...]
+    candidate_set: frozenset[int]
+    candidate_mask: int
 
 
 def load_json(path: Path) -> dict:
@@ -101,6 +104,8 @@ def build_tasks(data: dict, incumbent: dict) -> tuple[list[Task], dict[tuple[int
                     deadline=data["flight_dep"][f],
                     gate=fixed_gate[f],
                     candidates=candidates,
+                    candidate_set=frozenset(candidates),
+                    candidate_mask=sum(1 << l for l in candidates),
                 )
             )
     return tasks, by_flight_position
@@ -142,12 +147,15 @@ def solve(
 
     # Flight-profile precedence DAG.
     for f, n_tasks in enumerate(data["flight_n_tasks"]):
-        for pred_t in range(n_tasks):
-            pred = tasks[task_at[(f, pred_t)]]
-            for succ_t in range(n_tasks):
-                succ = tasks[task_at[(f, succ_t)]]
-                if pred.kind in REQUIRED_PREDS[succ.kind]:
-                    model.Add(end[pred.index] <= start[succ.index])
+        by_kind = {
+            tasks[task_at[(f, t)]].kind: tasks[task_at[(f, t)]].index
+            for t in range(n_tasks)
+        }
+        for succ_t in range(n_tasks):
+            succ = tasks[task_at[(f, succ_t)]]
+            for pred_kind in REQUIRED_PREDS[succ.kind]:
+                if pred_kind in by_kind:
+                    model.Add(end[by_kind[pred_kind]] <= start[succ.index])
 
     used = [model.NewBoolVar(f"used_{l}") for l in range(labor_count)]
     for l, indices in enumerate(candidate_tasks):
@@ -156,6 +164,18 @@ def solve(
             continue
         xs = [assigned[i][l] for i in indices]
         model.AddMaxEquality(used[l], xs)
+
+    # Redundant C9 propagation: optional intervals let CP-SAT's scheduling
+    # propagator reason about each crew before routing arcs are selected.
+    for l, indices in enumerate(candidate_tasks):
+        intervals = [
+            model.NewOptionalIntervalVar(
+                start[i], tasks[i].duration, end[i], assigned[i][l], f"iv_{i}_{l}"
+            )
+            for i in indices
+        ]
+        if intervals:
+            model.AddNoOverlap(intervals)
 
     # Sparse direct-successor graph.  A selected arc is a consecutive pair on
     # one crew time line.  Gates are fixed, so travel is a constant here.
@@ -168,44 +188,54 @@ def solve(
     for task in tasks:
         tasks_by_team_kind.setdefault(task.team_kind, []).append(task.index)
 
-    for i, left in enumerate(tasks):
-        left_candidates = set(left.candidates)
-        possible_successors = []
-        # Enumerate only the matching TeamType bucket, not every task pair.
-        for j in tasks_by_team_kind[left.team_kind]:
-            if i == j:
-                continue
-            right = tasks[j]
-            common_labor = left_candidates.intersection(right.candidates)
-            if not common_labor:
-                continue
-            travel = data["travel"][left.gate][right.gate]
-            if left.release + left.duration + travel > right.deadline - right.duration:
-                continue
-            # Stronger safe pruning: at least one common LaborID must be able
-            # to execute this order wholly inside its shift and task windows.
-            shift_feasible = False
-            for l in common_labor:
-                left_start = max(left.release, data["labor_shift_start"][l])
-                right_start = max(
-                    right.release,
-                    left_start + left.duration + travel,
-                    data["labor_shift_start"][l],
-                )
-                if (left_start + left.duration <= data["labor_shift_end"][l]
-                        and right_start + right.duration
-                        <= min(right.deadline, data["labor_shift_end"][l])):
-                    shift_feasible = True
-                    break
-            if not shift_feasible:
-                continue
-            distance = max(0, right.release - left.release - left.duration - travel)
-            possible_successors.append((distance, right.deadline, j, travel))
+    # One pass per TeamType bucket. Bounded heaps retain nearest outgoing and
+    # incoming arcs, preventing the one-sided k-nearest graph from orphaning tasks.
+    selected_pairs = set()
+    if max_successors > 0:
+        out_heaps = [[] for _ in tasks]
+        in_heaps = [[] for _ in tasks]
+        for bucket in tasks_by_team_kind.values():
+            for i in bucket:
+                left = tasks[i]
+                for j in bucket:
+                    if i == j:
+                        continue
+                    right = tasks[j]
+                    common_mask = left.candidate_mask & right.candidate_mask
+                    if not common_mask:
+                        continue
+                    travel = data["travel"][left.gate][right.gate]
+                    if left.release + left.duration + travel > right.deadline - right.duration:
+                        continue
+                    common_labor = left.candidate_set & right.candidate_set
+                    if not any(
+                        max(right.release,
+                            max(left.release, data["labor_shift_start"][l])
+                            + left.duration + travel)
+                        + right.duration
+                        <= min(right.deadline, data["labor_shift_end"][l])
+                        for l in common_labor
+                    ):
+                        continue
+                    distance = abs(right.release - left.release - left.duration - travel)
+                    out_item = (-distance, -right.deadline, -j, j)
+                    in_item = (-distance, left.release, -i, i)
+                    heapq.heappush(out_heaps[i], out_item)
+                    heapq.heappush(in_heaps[j], in_item)
+                    if len(out_heaps[i]) > max_successors:
+                        heapq.heappop(out_heaps[i])
+                    if len(in_heaps[j]) > max_successors:
+                        heapq.heappop(in_heaps[j])
+        for i in range(len(tasks)):
+            selected_pairs.update((i, item[3]) for item in out_heaps[i])
+            selected_pairs.update((item[3], i) for item in in_heaps[i])
+    else:
+        for bucket in tasks_by_team_kind.values():
+            selected_pairs.update((i, j) for i in bucket for j in bucket if i != j)
 
-        possible_successors.sort()
-        if max_successors > 0:
-            possible_successors = possible_successors[:max_successors]
-        for _, _, j, travel in possible_successors:
+    for i, j in sorted(selected_pairs):
+            left, right = tasks[i], tasks[j]
+            travel = data["travel"][left.gate][right.gate]
             arc = model.NewBoolVar(f"arc_{i}_{j}")
             arc_count += 1
             incoming[j].append(arc)
@@ -248,13 +278,17 @@ def solve(
             first_on_l.append(both)
         model.Add(sum(first_on_l) == used[l])
 
-    labor_index = {labor_id: i for i, labor_id in enumerate(data["LaborID"])}
-    for task in tasks:
-        model.AddHint(start[task.index], incumbent["task_start"][task.flight][task.position])
-        hinted_labor = labor_index[incumbent["task_labor"][task.flight][task.position]]
-        if hinted_labor in assigned[task.index]:
-            model.AddHint(labor[task.index], hinted_labor)
-            model.AddHint(assigned[task.index][hinted_labor], 1)
+    if incumbent.get("cost", -1) >= 0:
+        labor_index = {labor_id: i for i, labor_id in enumerate(data["LaborID"])}
+        for task in tasks:
+            hinted_start = incumbent["task_start"][task.flight][task.position]
+            if task.release <= hinted_start <= task.deadline - task.duration:
+                model.AddHint(start[task.index], hinted_start)
+            hinted_name = incumbent["task_labor"][task.flight][task.position]
+            hinted_labor = labor_index.get(hinted_name, -1)
+            if hinted_labor in assigned[task.index]:
+                model.AddHint(labor[task.index], hinted_labor)
+                model.AddHint(assigned[task.index][hinted_labor], 1)
 
     total_cost = sum(data["labor_cost"][l] * used[l] for l in range(labor_count))
     if optimize:

@@ -105,6 +105,8 @@ array[GateID, GateID] of int: travel;
 int: min_gate_gap    = 30;      % C5: minimum inter-turn gap on a shared gate
 int: max_work_streak = 90;      % C12: work streak after which a rest is required
 int: rest_duration   = 15;      % C12: minimum rest gap
+bool: enable_tier3 = false;
+bool: enable_symmetry = false;
 
 % ---- A test on whether a task index is active for a flight or not ----
 function bool: active(FlightID: f, int: t) = t <= flight_n_tasks[f];
@@ -200,7 +202,7 @@ constraint forall(rep in LaborID where
     labor_shift_end[l] = labor_shift_end[rep]
   })
 )(
-  value_precede_chain(
+  enable_symmetry -> value_precede_chain(
     [l | l in LaborID where
       labor_kind[l] = labor_kind[rep] /\
       labor_cost[l] = labor_cost[rep] /\
@@ -221,11 +223,11 @@ constraint forall(f1, f2 in FlightID, t1, t2 in TASK_IDX where
   (f1 < f2 \/ (f1 = f2 /\ t1 < t2)) /\
   compatible_labor[f1, t1] intersect compatible_labor[f2, t2] != {}
 )(
-  task_labor[f1, t1] = task_labor[f2, t2] ->
+  enable_tier3 -> (task_labor[f1, t1] = task_labor[f2, t2] ->
     (task_start[f1, t1] + flight_tasks[f1, t1].duration
        + travel[gate[f1], gate[f2]] <= task_start[f2, t2] \/
      task_start[f2, t2] + flight_tasks[f2, t2].duration
-       + travel[gate[f2], gate[f1]] <= task_start[f1, t1])
+       + travel[gate[f2], gate[f1]] <= task_start[f1, t1]))
 );
 
 % C12: identify each task's immediately preceding task on the same team's
@@ -247,13 +249,13 @@ array[ACTIVE_TASK] of var 0..horizon: streak_start;
 array[ACTIVE_TASK] of var 0..n_active_tasks: previous_task;
 
 constraint forall(i in ACTIVE_TASK)(
-  (previous_task[i] = 0) <->
+  enable_tier3 -> ((previous_task[i] = 0) <->
     forall(j in ACTIVE_TASK where j != i)(
       seq_labor[j] != seq_labor[i] \/ seq_start[j] >= seq_start[i]
-    )
+    ))
 );
 constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] > 0 ->
+  enable_tier3 -> (previous_task[i] > 0 ->
     let { var 1..n_active_tasks: p = previous_task[i] } in
       p != i /\
       seq_labor[p] = seq_labor[i] /\
@@ -262,23 +264,23 @@ constraint forall(i in ACTIVE_TASK)(
       forall(j in ACTIVE_TASK where j != i)(
         (seq_labor[j] = seq_labor[i] /\ seq_start[j] < seq_start[i]) ->
           seq_start[j] <= seq_start[p]
-      )
+      ))
 );
 constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] = 0 -> streak_start[i] = seq_start[i]
+  enable_tier3 -> (previous_task[i] = 0 -> streak_start[i] = seq_start[i])
 );
 constraint forall(i in ACTIVE_TASK)(
-  previous_task[i] > 0 ->
+  enable_tier3 -> (previous_task[i] > 0 ->
     let { var 1..n_active_tasks: p = previous_task[i] } in
       if seq_start[i] - seq_start[p] - seq_duration[p]
            - travel[seq_gate[p], seq_gate[i]] >= rest_duration then
         streak_start[i] = seq_start[i]
       else
         streak_start[i] = streak_start[p]
-      endif
+      endif)
 );
 constraint forall(i in ACTIVE_TASK)(
-  seq_start[i] <= streak_start[i] + max_work_streak
+  enable_tier3 -> seq_start[i] <= streak_start[i] + max_work_streak
 );
 
 % Redundant constraint: pin padding tasks so their output is fixed. (do not modify)
@@ -331,7 +333,7 @@ solve :: seq_search([
     [task_labor[f, t] | f in FlightID, t in TASK_IDX where active(f, t)],
     first_fail, indomain_min, complete
   )
-]) minimize cost;
+]) satisfy;
 
 % ---- Output (do not modify) ----
 function string: row_gate() =
