@@ -1,20 +1,22 @@
-## PPT
+<!-- ## PPT
 
-I need a slide for the final presentation. Structure below:
+I need a slide for the final presentation. Structure below: -->
 
 ### title card
 
-including team name: Avalon Airpot Team
+Team name: Avalon Airpot Team
 
-member: Keming Han, Yecheng Lao, Zixi Wang
+Member: Keming Han, Yecheng Lao, Zixi Wang
 
 ### slide 1: the picture of our best outcome
 
-![alt text](outcome.png)
+![alt text](1-7.png)
+![alt text](8-12.png)
 
 ### slide 2:
 
 solvers and tools: MiniZinc Chuffled and Google OR-Tools CP-SAT
+
 runtime limit = 300s
 
 ### slide 3: the techniques we used
