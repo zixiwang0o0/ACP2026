@@ -113,7 +113,8 @@ def build_tasks(data: dict, incumbent: dict) -> tuple[list[Task], dict[tuple[int
 
 def solve(
     data: dict, incumbent: dict, seconds: float, workers: int,
-    optimize: bool, max_successors: int,
+    optimize: bool, max_successors: int, fix_starts: bool = False,
+    start_slack: int = -1,
 ) -> dict:
     tasks, task_at = build_tasks(data, incumbent)
     model = cp_model.CpModel()
@@ -144,6 +145,14 @@ def solve(
         end.append(e)
         labor.append(lvar)
         assigned.append(xs)
+
+        if fix_starts:
+            fixed = incumbent["task_start"][task.flight][task.position]
+            model.Add(s == fixed)
+        elif start_slack >= 0:
+            center = incumbent["task_start"][task.flight][task.position]
+            model.Add(s >= center - start_slack)
+            model.Add(s <= center + start_slack)
 
     # Flight-profile precedence DAG.
     for f, n_tasks in enumerate(data["flight_n_tasks"]):
@@ -337,6 +346,8 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--optimize", action="store_true")
     parser.add_argument("--max-successors", type=int, default=16)
+    parser.add_argument("--fix-starts", action="store_true")
+    parser.add_argument("--start-slack", type=int, default=-1)
     parser.add_argument(
         "--adaptive", action="store_true",
         help="retry infeasible sparse models with 16, 32, then 64 successors",
@@ -356,7 +367,7 @@ def main() -> None:
         try:
             solution = solve(
                 data, incumbent, args.seconds, args.workers,
-                args.optimize, level,
+                args.optimize, level, args.fix_starts, args.start_slack,
             )
             break
         except RuntimeError as error:
