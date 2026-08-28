@@ -61,6 +61,11 @@ def valid_tier(data, sol):
 
 
 def main():
+    for tier in (1, 2, 3):
+        folder = ROOT / "solutions" / f"tier{tier}"
+        folder.mkdir(parents=True, exist_ok=True)
+        for old in folder.glob("*.json"):
+            old.unlink()
     instances = {i: load_json(ROOT / "data" / f"hackathon_{i:02}.json") for i in range(1, 13)}
     by_count = {len(d["FlightID"]): i for i, d in instances.items()}
     best = {}
@@ -77,7 +82,11 @@ def main():
             if cost is None: cost = sol.get("cost", 10**18)
             key = tier, inst
             if key not in best or cost < best[key][0]: best[key] = (cost, path)
+    highest = {inst: max(tier for tier, i in best if i == inst)
+               for inst in {i for _, i in best}}
     for (tier, inst), (cost, source) in sorted(best.items()):
+        if tier != highest[inst]:
+            continue
         target = ROOT / "solutions" / f"tier{tier}" / f"sol_{inst:02}.json"
         shutil.copy2(source, target)
         print(f"tier{tier} data{inst:02} cost={cost} <- {source.relative_to(ROOT)}")
