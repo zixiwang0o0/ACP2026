@@ -114,7 +114,7 @@ def build_tasks(data: dict, incumbent: dict) -> tuple[list[Task], dict[tuple[int
 def solve(
     data: dict, incumbent: dict, seconds: float, workers: int,
     optimize: bool, max_successors: int, fix_starts: bool = False,
-    start_slack: int = -1,
+    start_slack: int = -1, fix_fraction: float = 0.0,
 ) -> dict:
     tasks, task_at = build_tasks(data, incumbent)
     model = cp_model.CpModel()
@@ -153,6 +153,27 @@ def solve(
             center = incumbent["task_start"][task.flight][task.position]
             model.Add(s >= center - start_slack)
             model.Add(s <= center + start_slack)
+
+    labor_index = {labor_id: i for i, labor_id in enumerate(data["LaborID"])}
+    if fix_fraction > 0 and incumbent.get("cost", -1) >= 0:
+        release_count = max(1, round(len(tasks) * (1.0 - fix_fraction)))
+        ranked = sorted(
+            range(len(tasks)),
+            key=lambda i: data["labor_cost"][labor_index.get(
+                incumbent["task_labor"][tasks[i].flight][tasks[i].position], 0)],
+            reverse=True,
+        )
+        released = set(ranked[:release_count])
+        for i, task in enumerate(tasks):
+            if i in released:
+                continue
+            hinted_start = incumbent["task_start"][task.flight][task.position]
+            hinted_labor = labor_index.get(
+                incumbent["task_labor"][task.flight][task.position], -1)
+            if task.release <= hinted_start <= task.deadline - task.duration:
+                model.Add(start[i] == hinted_start)
+            if hinted_labor in assigned[i]:
+                model.Add(assigned[i][hinted_labor] == 1)
 
     # Flight-profile precedence DAG.
     for f, n_tasks in enumerate(data["flight_n_tasks"]):
@@ -194,53 +215,74 @@ def solve(
     transitions = []
     arc_count = 0
     tasks_by_team_kind: dict[str, list[int]] = {}
+    tasks_by_labor: list[list[int]] = [[] for _ in range(labor_count)]
     for task in tasks:
         tasks_by_team_kind.setdefault(task.team_kind, []).append(task.index)
+        for l in task.candidates:
+            tasks_by_labor[l].append(task.index)
 
-    # One pass per TeamType bucket. Bounded heaps retain nearest outgoing and
-    # incoming arcs, preventing the one-sided k-nearest graph from orphaning tasks.
+    # Build candidate pairs from labor buckets ordered by release time.  Each
+    # task inspects only a local time neighborhood instead of all pairs in its
+    # TeamType bucket. Bounded heaps retain nearest outgoing and incoming arcs.
     selected_pairs = set()
     if max_successors > 0:
         out_heaps = [[] for _ in tasks]
         in_heaps = [[] for _ in tasks]
-        for bucket in tasks_by_team_kind.values():
-            for i in bucket:
-                left = tasks[i]
-                for j in bucket:
-                    if i == j:
-                        continue
-                    right = tasks[j]
-                    common_mask = left.candidate_mask & right.candidate_mask
-                    if not common_mask:
-                        continue
-                    travel = data["travel"][left.gate][right.gate]
-                    if left.release + left.duration + travel > right.deadline - right.duration:
-                        continue
-                    common_labor = left.candidate_set & right.candidate_set
-                    if not any(
-                        max(right.release,
-                            max(left.release, data["labor_shift_start"][l])
-                            + left.duration + travel)
-                        + right.duration
-                        <= min(right.deadline, data["labor_shift_end"][l])
-                        for l in common_labor
-                    ):
-                        continue
-                    distance = abs(right.release - left.release - left.duration - travel)
-                    out_item = (-distance, -right.deadline, -j, j)
-                    in_item = (-distance, left.release, -i, i)
-                    heapq.heappush(out_heaps[i], out_item)
-                    heapq.heappush(in_heaps[j], in_item)
-                    if len(out_heaps[i]) > max_successors:
-                        heapq.heappop(out_heaps[i])
-                    if len(in_heaps[j]) > max_successors:
-                        heapq.heappop(in_heaps[j])
+        seen_pairs = set()
+        scan_radius = max(32, 4 * max_successors)
+
+        def consider_pair(i: int, j: int) -> None:
+            if i == j or (i, j) in seen_pairs:
+                return
+            seen_pairs.add((i, j))
+            left, right = tasks[i], tasks[j]
+            travel = data["travel"][left.gate][right.gate]
+            if left.release + left.duration + travel > right.deadline - right.duration:
+                return
+            common_labor = left.candidate_set & right.candidate_set
+            if not any(
+                max(right.release,
+                    max(left.release, data["labor_shift_start"][l])
+                    + left.duration + travel)
+                + right.duration <= min(right.deadline, data["labor_shift_end"][l])
+                for l in common_labor
+            ):
+                return
+            distance = abs(right.release - left.release - left.duration - travel)
+            heapq.heappush(out_heaps[i], (-distance, -right.deadline, -j, j))
+            heapq.heappush(in_heaps[j], (-distance, left.release, -i, i))
+            if len(out_heaps[i]) > max_successors:
+                heapq.heappop(out_heaps[i])
+            if len(in_heaps[j]) > max_successors:
+                heapq.heappop(in_heaps[j])
+
+        for bucket in tasks_by_labor:
+            ordered = sorted(bucket, key=lambda i: (tasks[i].release, tasks[i].deadline, i))
+            for p, i in enumerate(ordered):
+                for q in range(p + 1, min(len(ordered), p + scan_radius + 1)):
+                    j = ordered[q]
+                    consider_pair(i, j)
+                    consider_pair(j, i)
         for i in range(len(tasks)):
             selected_pairs.update((i, item[3]) for item in out_heaps[i])
             selected_pairs.update((item[3], i) for item in in_heaps[i])
     else:
         for bucket in tasks_by_team_kind.values():
             selected_pairs.update((i, j) for i in bucket for j in bucket if i != j)
+
+    # Always preserve direct incumbent path arcs, so a valid Tier-3 incumbent
+    # remains representable inside every sparse LNS neighborhood.
+    if incumbent.get("cost", -1) >= 0:
+        incumbent_lines: dict[int, list[tuple[int, int]]] = {}
+        for task in tasks:
+            name = incumbent["task_labor"][task.flight][task.position]
+            l = labor_index.get(name, -1)
+            s = incumbent["task_start"][task.flight][task.position]
+            if l in task.candidate_set and task.release <= s <= task.deadline - task.duration:
+                incumbent_lines.setdefault(l, []).append((s, task.index))
+        for line in incumbent_lines.values():
+            line.sort()
+            selected_pairs.update((left[1], right[1]) for left, right in zip(line, line[1:]))
 
     for i, j in sorted(selected_pairs):
             left, right = tasks[i], tasks[j]
@@ -288,7 +330,6 @@ def solve(
         model.Add(sum(first_on_l) == used[l])
 
     if incumbent.get("cost", -1) >= 0:
-        labor_index = {labor_id: i for i, labor_id in enumerate(data["LaborID"])}
         for task in tasks:
             hinted_start = incumbent["task_start"][task.flight][task.position]
             if task.release <= hinted_start <= task.deadline - task.duration:
@@ -304,7 +345,8 @@ def solve(
         model.Minimize(total_cost)
 
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = seconds
+    if seconds > 0:
+        solver.parameters.max_time_in_seconds = seconds
     solver.parameters.num_search_workers = workers
     solver.parameters.random_seed = 20260827
     solver.parameters.log_search_progress = False
@@ -348,6 +390,7 @@ def main() -> None:
     parser.add_argument("--max-successors", type=int, default=16)
     parser.add_argument("--fix-starts", action="store_true")
     parser.add_argument("--start-slack", type=int, default=-1)
+    parser.add_argument("--fix-fraction", type=float, default=0.0)
     parser.add_argument(
         "--adaptive", action="store_true",
         help="retry infeasible sparse models with 16, 32, then 64 successors",
@@ -368,6 +411,7 @@ def main() -> None:
             solution = solve(
                 data, incumbent, args.seconds, args.workers,
                 args.optimize, level, args.fix_starts, args.start_slack,
+                args.fix_fraction,
             )
             break
         except RuntimeError as error:

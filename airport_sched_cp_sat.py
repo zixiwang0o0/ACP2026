@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import bisect
+import heapq
 import json
 from pathlib import Path
 
@@ -51,12 +53,17 @@ def solve(data: dict, time_limit: float, workers: int) -> dict | None:
         gate_ok.append(allowed)
     gate = [m.new_int_var_from_domain(cp_model.Domain.from_values(gate_ok[f]), f"gate_{f}") for f in range(F)]
 
-    # C5: statically conflicting flights cannot share a gate.
-    for f1 in range(F):
-        for f2 in range(f1 + 1, F):
-            if (data["flight_dep"][f1] + 30 > data["flight_arr"][f2]
-                    and data["flight_dep"][f2] + 30 > data["flight_arr"][f1]):
-                m.add(gate[f1] != gate[f2])
+    # C5: sweep flight intervals instead of checking all O(F^2) pairs.
+    gate_ok_sets = [frozenset(values) for values in gate_ok]
+    active = []  # (departure plus turnaround gap, flight)
+    for f in sorted(range(F), key=lambda x: data["flight_arr"][x]):
+        arrival = data["flight_arr"][f]
+        while active and active[0][0] <= arrival:
+            heapq.heappop(active)
+        for _, other in active:
+            if gate_ok_sets[f] & gate_ok_sets[other]:
+                m.add(gate[f] != gate[other])
+        heapq.heappush(active, (data["flight_dep"][f] + 30, f))
 
     tasks = []
     by_flight = [[] for _ in range(F)]
@@ -68,6 +75,10 @@ def solve(data: dict, time_limit: float, workers: int) -> dict | None:
             by_flight[f].append(i)
     N = len(tasks)
     start, end, compatible, assign = [], [], [], {}
+    labor_by_kind = {}
+    for l, kind in enumerate(data["labor_kind"]):
+        labor_by_kind.setdefault(kind, []).append(l)
+    labor_tasks = [[] for _ in range(L)]
 
     # C6, C7, C10: compatible labor domains and task windows.
     for i, (f, t, kind, duration) in enumerate(tasks):
@@ -76,15 +87,15 @@ def solve(data: dict, time_limit: float, workers: int) -> dict | None:
         m.add(e == s + duration)
         start.append(s); end.append(e)
         choices = []
-        for l in range(L):
-            if (data["labor_kind"][l] == TEAM[kind]
-                    and max(data["flight_arr"][f], data["labor_shift_start"][l]) + duration
+        for l in labor_by_kind[TEAM[kind]]:
+            if (max(data["flight_arr"][f], data["labor_shift_start"][l]) + duration
                     <= min(data["flight_dep"][f], data["labor_shift_end"][l])):
                 choices.append(l)
                 x = m.new_bool_var(f"x_{i}_{l}")
                 assign[i, l] = x
                 m.add(s >= data["labor_shift_start"][l]).only_enforce_if(x)
                 m.add(e <= data["labor_shift_end"][l]).only_enforce_if(x)
+                labor_tasks[l].append(i)
         if not choices:
             return None
         compatible.append(choices)
@@ -92,27 +103,32 @@ def solve(data: dict, time_limit: float, workers: int) -> dict | None:
 
     # C8: precedence within each flight.
     for f in range(F):
-        for i in by_flight[f]:
-            for j in by_flight[f]:
-                if tasks[i][2] in PREDS.get(tasks[j][2], set()):
-                    m.add(end[i] <= start[j])
+        by_kind = {tasks[i][2]: i for i in by_flight[f]}
+        for j in by_flight[f]:
+            for pred_kind in PREDS.get(tasks[j][2], set()):
+                if pred_kind in by_kind:
+                    m.add(end[by_kind[pred_kind]] <= start[j])
 
     # Gate-pair travel variables are shared by all task arcs for that flight pair.
     travel_flat = [v for row in data["travel"] for v in row]
     travel_var = {}
-    for f1 in range(F):
-        for f2 in range(F):
+    travel_min, travel_max = min(travel_flat), max(travel_flat)
+
+    def get_travel(f1, f2):
+        key = (f1, f2)
+        if key not in travel_var:
             index = m.new_int_var(0, G * G - 1, f"travel_index_{f1}_{f2}")
-            value = m.new_int_var(min(travel_flat), max(travel_flat), f"travel_{f1}_{f2}")
+            value = m.new_int_var(travel_min, travel_max, f"travel_{f1}_{f2}")
             m.add(index == gate[f1] * G + gate[f2])
             m.add_element(index, travel_flat, value)
-            travel_var[f1, f2] = value
+            travel_var[key] = value
+        return travel_var[key]
 
     # C9-C12: one circuit per labor. Self-loops mean "task not assigned".
     streak = [m.new_int_var(0, horizon, f"streak_{i}") for i in range(N)]
     used = []
     for l in range(L):
-        candidates = [i for i in range(N) if (i, l) in assign]
+        candidates = labor_tasks[l]
         use = m.new_bool_var(f"used_{l}")
         used.append(use)
         if not candidates:
@@ -134,19 +150,19 @@ def solve(data: dict, time_limit: float, workers: int) -> dict | None:
             arcs.extend(((0, node[i], first), (node[i], 0, last)))
             m.add(streak[i] == start[i]).only_enforce_if(first)
             m.add(start[i] <= streak[i] + 90).only_enforce_if(x)
+        ordered = sorted(candidates, key=lambda j: data["flight_dep"][tasks[j][0]] - tasks[j][3])
+        latest_starts = [data["flight_dep"][tasks[j][0]] - tasks[j][3] for j in ordered]
         for i in candidates:
             fi = tasks[i][0]
-            latest_i_end = data["flight_dep"][fi]
-            for j in candidates:
+            earliest_i_end = data["flight_arr"][fi] + tasks[i][3]
+            first_possible = bisect.bisect_left(latest_starts, earliest_i_end)
+            for j in ordered[first_possible:]:
                 if i == j:
                     continue
                 fj = tasks[j][0]
-                # Skip arcs that cannot respect even zero travel.
-                if data["flight_arr"][fi] + tasks[i][3] > data["flight_dep"][fj] - tasks[j][3]:
-                    continue
                 arc = m.new_bool_var(f"arc_{i}_{j}_{l}")
                 arcs.append((node[i], node[j], arc))
-                tv = travel_var[fi, fj]
+                tv = get_travel(fi, fj)
                 m.add(start[j] >= end[i] + tv).only_enforce_if(arc)
                 rested = m.new_bool_var(f"rest_{i}_{j}_{l}")
                 m.add_implication(rested, arc)
