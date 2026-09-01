@@ -1,1262 +1,0 @@
-Explainable Constraint Solving
-
-Tias Guns, Ignace Bleukx, Dimos Tsouros
-    KU Leuven, Belgium    UOWM, Greece
-
-
-
-
-Link to slides and runnable examples:
-https://github.com/CPMpy/XCP-explain
-Constraint Solving
-        “Solving discrete, constrained optimisation problems”
-   Workforce allocation
-                                         Assembly scheduling and topo. optimisation
-
-
-
-
-           Waste collection routing
-
-
-                                               Industrial weave production planning
-
-
-
-
-                                                                https://cpmpy.cs.kuleuven.be
-Declarative paradigm: model + solve
-
-                          Model   +   Solve
-         Decision variables
-         Objective function
-         Constraints
-
-
-
-
-3
- Tremendous progress
- in solver efficiency!
-                                   MIP
-SAT
-
-
-
-
-[SAT Museum, Bierre et al, 2023]         [Progress in Math. Prog., Koch et al, 2022]
-Model + Solve paradigm, in practice
-        Problem       Problem
-                     description                    Model   +   Solve
-                                   Decision variables
-                                   Objective function
-                                   Constraints
-
-
-
-
-    
-        What if no solution is found?
-    
-        What if the user does not like the solution?
-    
-        What if the user expected a different solution?
-
-5
-Beyond Model + Solve
-
-
-    Learning from images, production data, ...
-
-    Learning user preferences
-
-    Explaining constraint solving
-
-    Stateful interaction
-
-
-                           CHAT-Opt: Conversational Human-Aware Technology for Optimisation
-
-
-
-7                                                                 Faculteit Ingenieurswetenschappen
-Trustworthy & Explainable constraint solving
-Human-aware AI:
-
-    Respect human agency
-
-    Support users in decision making
-
-    Provide explanations and learning opportunities
-
-
-Acknowledges that a Model is only an approximation of the problem,
-that it might result in undesirable solutions.
-Explainable Constraint Programming (XCP)
-In general, "Why X?"   (with X a solution or UNSAT)
-Explaining constraint 'propagation'?
-Concept from Lazy Clause Generation / CP-SAT solvers (Stuckey, 2010)
-
-"every time a propagator determines a domain change of a variable, it records a clause that explains
-the domain change."
-
-[Emir’s lecture yesterday:]
-A single constraint propagator generates a clause to explain a domain change to a solver.
-
-
-Today we focus on user-oriented explanations, typically involving multiple constraints.
-Explainable Constraint Programming (XCP)
-In general, "Why X?"      (with X a solution or UNSAT)
-
-
-Deductive explanation:
-• What constraints cause X?
-
-Counterfactual explanation:
-• What to change if I want Y instead of X?
-Example XCP interaction
-Toy example, graph coloring:
-Modeling Minimum Graph Coloring as a CP problem
-
-Minimize max(X)
-    s.t. Xi ≠ Xj                   ∀ (i,j) ∈ Edges
-         Xi ∈ {1, …, max_colors}   ∀ i ∈ Nodes
-Modeling Minimal Graph Coloring as a CP problem
-Lets color the graph...
-
-
-
-
-ExitStatus.OPTIMAL (0.003024 seconds)
-Found optimal coloring with 4 colors
-Example XCP interaction
-Why do we need at least 4 colors?
-Deductive explanation: pinpoint to constraints causing this fact
-
-
-
-
-                                             UNSAT is caused by the following constraint(s):
-
-
-
-                                                                                MUS = Minimal Unsatisfiable Subset
-Example XCP interaction
-Why do we need at least 4 colors?
-Counterfactual explanation: pinpoint to constraint changes that would allow, e.g. 3 colors
-
-
-
-
-                                       UNSAT can be resolved by removing the following constraint(s):
-
-
-
-                                                                         MCS = Minimal Correction Subset
-
-
-                                                                                      Note that an MCS fixes all conflicts
-                                                                                      (here: breaks both 4-cliques)
-Example XCP interaction
-Why do we need at least 4 colors?
-Counterfactual explanation: pinpoint to constraint changes that would allow, e.g. 3 colors
-Can now compute the counterfactual solution:
-Explainable Constraint Programming (XCP)
-In general, "Why X?"      (with X a solution or UNSAT)
-
-
-Deductive explanation:
-• What constraints cause X?
-
-Counterfactual explanation:
-• What to change if I want Y instead of X?
-  (includes feasibility restoration)
-
-
-    Especially useful/needed in application context!
-Applications of explanation techniques
-"Human-centred feasibility restoration in practice", Ilankaikone Senthooran, Gleb Belov, Kevin Leo,
-Michael Wybrow, Matthias Klapperstueck, Tobias Czauderna, Mark Wallace, and Maria Garcia De La
-Banda. CP 2021.
-Applications of explanation techniques
-"Sudoku Assistant–an AI-Powered App to Help Solve Pen-And-Paper Sudokus". Tias Guns, Emilio
-Gamba, Maxime Mulamba, Ignace Bleukx, Senne Berden, and Milan Pesa. AAAI-2023 Best Demo
-Award.
-Applications of explanation techniques
-“Modeling and Explaining an Industrial Workforce Allocation and Scheduling Problem“. Ignace
-Bleukx, Ryma Boumazouza, Tias Guns, Nadine Laage, and Guillaume Poveda. CP 2025 Best Application
-Award
-Applications of explanation techniques
-“CrewAId: Interactive Optimisation for Human-In-The-Loop Crew Rostering and Rerostering”.
-Matthias Klapper-stueck, Frits de Nijs, Ilankaikone Senthooran, Matteo Miceli, and Michael Wybrow. CP
-2026 Best Application Award
-Relation to Explainable AI (XAI) at large
-
-D. Gunning, 2015: DARPA XAI challenge
-"Every explanation is set within a context that depends..." -> domain dependent
-
-M. Fox et al, 2017: Explainable Planning
-Need for trust, interaction and transparancy.
-
-T. Miller, 2018: Explainable AI: Beware of Inmates Running the Asylum
-Insights from the social sciences: Someone explains something to someone
-
-R. Guidotti, 2018: A survey of methods for explaining black box ML models
-The vast majority of work/attention...
-
-H. Zhaom, 2024: Explainability for large language models: A survey.
-The latest hype
-Formal XAI
-J. Marques-Silva, A. Ignatiev, AAAI-2022: Delivering Trustworthy AI through Formal XAI
-"... best known XAI approaches [in ML] fail to provide sound explanations or they exhibit significant
-redundance."
-
-Formal explanations are not only sound but guarantee irredundancy.
-
-All formal XAI methods relate back to the same concepts and related algorithms:
-• Minimal Unsatisfiable Subset (MUS)
-• Minimal Correction Subset (MCS)
-
-What conceptually changes is the set of what (and the solvers underneath)
-Explainable Constraint Programming (XCP)
-In general, "Why X?"      (with X a solution or UNSAT)
-
-
-Deductive explanation:
-• What constraints cause X?
-
-Counterfactual explanation:
-• What to change if I want Y instead of X?
-  (includes feasibility restoration)
-
-
-    Especially useful/needed in application context!
-Outline of the lectures
-
-Introduction to XCP
- Deductive explanations for UNSAT
-
-
-Break
-
-
-Deductive explanations for SAT/OPT
-Counterfactual explanations for UNSAT/SAT/OPT
-Outlook and challenges
-Explainable Constraint Programming (XCP)
-In general, "Why X?"     (with X a solution or UNSAT)
-
-
-Deductive explanation:
-• What constraints cause X?
-
-E.g.,
-
-  why is there no solution
-
-  why does an assignment follow from the constraints
-
-  why is it optimal/is there no better solution
-
-  ...
-
-All these cases can typically be reduced to explaining UNSAT.
-Example, explain why fact follows from constraints C:
-     C ⊨ fact :: C ∧ ¬ fact ⊨ ⊥
-Running example in this talk: Nurse Scheduling
-• The assignment of shifts and holidays to nurses.
-• Each nurse has their own restrictions and preferences;
-• so does the hospital.
-
-
-
-
-Nr of days to schedule: 14
-Nr of shift types: 1
-Staff holidays:
-An example solution (day requirements and day preferences as soft constraints)
-Nurse rostering, explaining unsatisfiability
-            Model nurse rostering problem as decision problem      (no objective)
-
-            All constraints and day preferences are hard constraints.
-
-
-
-
-            False
-
-            ... no solution found
-The set of all constraints is unsatisfiable.
-
-But do all constraints contribute to this?
-Deductive Explanations for UNSAT problems
-
-
-
-
-             Minimal Unsatisfiable Subset (MUS)
-             Pinpoint to constraints causing a conflict
-             ... shrink model to a minimal set of constraints
-             ... minimize cognitive burden for user
-How to compute a MUS?
-Deletion-based MUS algorithm
-[Joao Marques-Silva. Minimal Unsatisfiability: Models, Algorithms and Applications. ISMVL 2010. pp. 9-
-14]
-
-                   From Alexey’s class on Monday:
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS?
-Deletion-based MUS algorithm
-How to compute a MUS, efficiently?
-Deepdive: incremental CDCL solving with assumption variables 1/4
-Deepdive: incremental CDCL solving with assumption variables 2/4
-Deepdive: incremental CDCL solving with assumption variables 3/4
-
-
-                            :: a1 → (p \/ -u) :: -a1 \/ p \/ -u
-Deepdive: incremental CDCL solving with assumption variables 4/4
-How to compute a MUS, efficiently?
-
-Assumption-based incremental solving only for Boolean SAT problems?
-
-No!
-• SMT solvers: SAT Module Theories with CDCL (e.g. Z3)
-• CP-solvers: Lazy Clause Generation (e.g. OR-Tools, Pumpkin)
-• Pseudo-Boolean solvers: Conflict-Driven Cutting Plane Learning (e.g. RoundingSAT, Exact)
-• MaxSAT solvers: Core-guided solvers
-Reason for using CPMpy here: incremental solving
-                                 Assumption
-Solver      Technology   ISAT?                IOPT?   Notes
-                                 variables?
-
-Z3          SMT          Yes     Yes          No
-
-                                                      Assumptions NOT incremental! Every solve starts
-Or-Tools    CP-SAT       No      Yes          No
-                                                      from scratch
-
-Pumpkin     CP-SAT       Yes     Yes          No
-
-HiGHS       ILP          Yes     No           Yes
-
-            Pseudo-
-Exact                    Yes     Yes          Yes     Only linux, manual installation on Mac possible
-            Boolean
-
-PySAT       SAT          Yes     Yes          /
-
-                                                      GCS, Choco, CP Optimizer, MiniZinc, Hexaly, SCIP,
-+ 11 more
-                                                      Gurobi, CPLEX, RC2, Pindakaas, PySDD
-How to compute a MUS, efficiently?
-
-
-                                      1) add Boolean indicator variables
-
-
-                                             2) Assume they are set to ‘true’
-
-
-
-                                     3) Extract an UNSAT subset from solver
-How to compute a MUS, efficiently?
-
-
-                                                        1) add Boolean indicator variables
-
-
-                                                               2) Assume they are set to ‘true’
-
-
-
-                                                      3) Extract an UNSAT subset from solver
-                                                    4) Incrementally solve different subsets
-
-
-
-
-                5) clause set refinement: unsat core may contain even fewer constraints
-How to compute a MUS, efficiently?
-
-Assumption-based incremental solving for MUS computation:
-
-• Biggest downside:
-  
-    `ind → constraint` needs extra bookkeeping (and weaker pre-solve)
-  
-    For global constraints even worse: can not use global* but must decompose!
-
-• By far the biggest impact in practice: first UNSAT core
-
-Can we get an UNSAT core without introducing indicator variables/implication constraints?
-   Spoiler alert: proof logging!
-
-* In some cases you can use the global on auxiliary variables, and reify channeling constraints:
-”Efficient Reformulations of Half-reified Global Constraints using Auxiliary Variables” Bleukx et al, JAIR26
-How to compute a MUS: from prooflog
-
-Pumpking solver has CP-level proof format
-+ allows users to ‘tag’ constraints to reverse-map
-
-Example input:
-   1) AllDifferent(x, y)
-   2) (x) == (z)
-   3) x <= 1
-   4) a + b <= 15
-   5) y == 1
-   6) x >= y
-
-
-A visualisation of a DRCP proof in terms of
- user-level constraints (in blue):
-How to compute a MUS: from prooflog
-
-Prooflog contains ALL solver steps,
- including those that did not contribute to failure.
-
-Trimming: walk backwards and only keep only elements
- connected to the conclusion
-
-Is it a MUS, is it minimal?
- Not guaranteed!
- Need to use a MUS algorithm (but no assumption-incrementality)
-
-
-Advantage: first smaller core, without needing to use indicator variables
-Disadvantage: few/young prooflogging solvers, and prooflogging has some overhead
-How to compute a MUS, efficiently?
-
-
-
-
-                                     Bigger difference on more sizable problems! (later)
-Running example
-MUS explanation of why the nurse rostering instance is UNSAT
-
-
-
-
-Length of MUS: 11
-- Robert requests to work shift D on Wed 1
-- Richard has a day off on Sat 1
-- Shift D on Sat 1 must be covered by 5 nurses out of 8
-- Robert requests to work shift D on Thu 1
-- Robert can work at most 5 days before having a day off
-- Kevin should work at most 1 weekends
-- Robert requests to work shift D on Mon 1
-- Robert requests to work shift D on Tue 1
-- Kevin requests to work shift D on Sat 2
-- Katherine has a day off on Sat 1
-- Robert requests to work shift D on Fri 1
-Running example
-MUS explanation of why the nurse rostering instance is UNSAT
-Can we find more MUS'es systematically?
-Liffiton, M.H., & Malik, A. (2013). Enumerating infeasibility: Finding multiple MUSes quickly. In
-Proceedings of the 10th International Conference on Integration of AI and OR Techniques in Constraint
-Programming (CPAIOR 2013) (pp. 160–175)
-
-
-
-
-MMMMMMMMMMMMMMMMMMMMMMMMM.MMMMMMMMMM.MM.MMMMMMMMM..MMMMMMMMMMMMMMMM..MMMMM.MMMMMM.M.MM..
-MMMMM.MMMMMMMM..MMM.M..M.M.MMM.MMM.MMM.MMMMMMMM..MM
-Found 114 MUSes in 15.011045694351196
-
-
-Marco uses 2 solvers:
-  ●
-      MAP solver = generate unknown candidate constraint set
-  ●
-      Subsolver = checks whether the candidate is SAT or UNSAT
-MARCO enumeration of MUS/MSS (has implicit representation of lattice)
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-MARCO enumeration of MUS/MSS
-Many MUS'es may exist...
-This problem has just 360 constraints, yet 100.000+
-MUSes exist...
-Which one to show?
-Can we influence which MUS is found?
-Influencing which MUS is found?
-QuickXPlain algorithm (Junker, 2004).
-
-Widely used, in model-based diagnosis, recommender systems, verification, and more.
-
-Dichotomic search given a lexicographic preference order over the constraints:
-c_1 < c_2 < c_3 < ... < c_n (= have as few 'right-most' as possible)
-Influencing which MUS is found?
-QuickXPlain: Dichotomic search, given a lexicographic preference order over the constraints:
-
-
-
-
-                                                    * Dichotomic: recursively splits the space in two.
-                                                    The two parts are dependent, so no divide-and-conquer!
-Influencing which MUS is found?
-QuickXPlain: Dichotomic search, given a lexicographic preference order over the constraints:
-
-
-
-
-                                                    * Dichotomic: recursively splits the space in two.
-                                                    The two parts are dependent, so no divide-and-conquer!
-Influencing which MUS is found?
-QuickXPlain: Dichotomic search, given a lexicographic preference order over the constraints:
-
-
-
-
-                                                    * Dichotomic: recursively splits the space in two.
-                                                    The two parts are dependent, so no divide-and-conquer!
-Influencing which MUS is found?
-QuickXPlain: Dichotomic search, given a lexicographic preference order over the constraints:
-
-
-
-
-                                                    * Dichotomic: recursively splits the space in two.
-                                                    The two parts are dependent, so no divide-and-conquer!
-Influencing which MUS is found?
-QuickXPlain: Dichotomic search, given a lexicographic preference order over the constraints:
-
-
-
-
-                                                    * Dichotomic: recursively splits the space in two.
-                                                    The two parts are dependent, so no divide-and-conquer!
-Influencing which MUS is found?
-QuickXPlain: Dichotomic search, given a lexicographic preference order over the constraints:
-
-
-
-
-                                                    * Dichotomic: recursively splits the space in two.
-                                                    The two parts are dependent, so no divide-and-conquer!
-                                              1) add Boolean indicator variables
-Influencing which MUS is found?
-QuickXPlain: Dichotomic search, given a lexicographic preference order over the constraints:
-
-
-
-
-                                                    * Dichotomic: recursively splits the space in two.
-                                                    The two parts are dependent, so no divide-and-conquer!
-                                              1) add Boolean indicator variables
-Influencing which MUS is found?
-QuickXPlain: Dichotomic search, given a lexicographic preference order over the constraints:
-
-
-
-
-                                                    * Dichotomic: recursively splits the space in two.
-                                                    The two parts are dependent, so no divide-and-conquer!
-Influencing which MUS is found?
-QuickXPlain: Dichotomic search, given a lexicographic preference order over the constraints:
-
-
-
-
-                                                    * Dichotomic: recursively splits the space in two.
-                                                    The two parts are dependent, so no divide-and-conquer!
-For the
-curious
-Running example
-QuickXPlain algorithm (Junker, 2004).
-
-Widely used, in model-based diagnosis, recommender systems, verification, and more.
-
-
-
-
-.........................................................................................................................................................................................................................................
-Prefer complex (long len(str)) constraints: Length of MUS: 39
-(in 11.042917013168335 seconds)
-........................
-Prefer short len(str) constraints: Length of MUS: 3
-(in 2.0805091857910156 seconds)
-
-
-Best algorithm when you have a non-incremental solver! (best-case logarithmic nr solve calls)
-Finding a smallest or weighted smallest MUS?
-Give every constraint a weight: OUS: Optimal Unsatisfiable Subsets (Gamba, Bogaerts, Guns, 2021).
-An extension of the implicit hitting-set approach for finding smallest MUSes (Ignatiev, Janota,
-Marques-Silva, 2014)
-
-Key properties we will need:
-1.If a subset is SAT, can grow it to a Maximal Satisfiable Subset (MSS)
-2.The complement of a MSS is a Minimal Correction Subset (MCS)
-3.Theorem: A MUS is a hitting set of all MCSes (= shares at least 1 constraint with every MCS)
-Finding a smallest or weighted smallest MUS?
-Give every constraint a weight: OUS: Optimal Unsatisfiable Subsets (Gamba, Bogaerts, Guns, 2021).
-
-Theorem: A MUS is a hitting set of all MCSes (= covers at least 1 constraint in every MCS)
-
-If we have an explicit set of all MCSes: OUS is optimal hitting set of this set.
-
-
-Maximize W*C
-     s.t. Cj1 | Cj2 | … | Cjm         ∀ {j1, j2, …, jm} ∈ SetsToHit
-          Ci ∈ {0,1}                  ∀ i ∈ Constraints
-Finding a smallest or weighted smallest MUS?
-Give every constraint a weight: OUS: Optimal Unsatisfiable Subsets (Gamba, Bogaerts, Guns, 2021).
-
-If we have an explicit set of all MCSes: OUS is optimal hitting set of this set.
-
-Maximize W*C                                                                        O
-     s.t. Cj1 | Cj2 | … | Cjm         ∀ {j1, j2, …, jn} ∈ SetsToHit
-          Ci ∈ {0,1}                  ∀ i ∈ Constraints
-
-We do not have the explicit set… Let’s do a Benders decomposition and generate it on-the-fly:
-1) HS solver: given a subset of SetsToHit (initially empty):
-     generate an optimal hitting set/candidate OUS
-2) Subset solver (checks UNSAT and generates cuts for the HS solver):
-  
-    If UNSAT: found an optimal subset that is unsatisfiable → OUS!
-  
-    If SAT: grow to an MSS and add the complement (=MCS) to SetsToHit of HS solver
-Efficiently optimising which MUS is found?
-OUS: Optimal Unsatisfiable Subsets (Gamba, Bogaerts, Guns, 2021). Every constraints has a weight.
-
-Known in the SAT community as an implicit hitting-set algorithm.
-
-
-
-                                   Optimal HittingSet
-                     Hitting Set
-       W               Solver                              Subset
-                    (incomplete                            Solver
-                   set of MCSs)
-                                       New MCS
-                                                      SAT:
-                                                   Grow MSS    UNSAT: Optimal Unsatisfiable Subset
- Efficiently optimising which MUS is found? Efficiently: HS solver is bottleneck
- OUS: Optimal Unsatisfiable Subsets (Gamba, Bogaerts, Guns, 2021). Every constraints has a weight.
-
- Known in the SAT community as an implicit hitting-set algorithm.
-                                        3. Can use heuristic HS solvers to send (HS, is_optimal)
-     2. Use an IOPT solver (e.g. MIP)   [only return on optimal]
-                                        Optimal HittingSet
-                          Hitting Set
-                                                                                   4. Use an ISAT solver
-          W                 Solver                                 Subset
-                         (incomplete                               Solver
-                        set of MCSs)
-                                            New MCS
-1. seed with initial MCSes                                  SAT:
-(e.g. grow from single constraints)                      Grow MSS      UNSAT: Optimal Unsatisfiable Subset
-Efficiently optimising which MUS is found? Efficiently: HS solver is bottleneck
-OUS: Optimal Unsatisfiable Subsets (Gamba, Bogaerts, Guns, 2021). Every constraints has a weight.
-
-Known in the SAT community as an implicit hitting-set algorithm.
-
-
-
-                                   Optimal HittingSet
-                     Hitting Set
-       W               Solver                              Subset
-                    (incomplete                            Solver
-                   set of MCSs)
-                                       New MCS
-                                                        SAT:
-                                                    Grow MSS UNSAT: Optimal Unsatisfiable Subset
-                                        5. generate cheap correction subsets:
-                                        - non-minimal (just check constraints against solution)
-                                        - multiple (e.g. complementary: check the MCS itself)
-Running example, nurse rostering
-OUS: Optimal Unsatisfiable Subsets (Gamba, Bogaerts, Guns, 2021). Every constraint has a weight.
-
-
-
-
-Length of sMUS: 3
-- Robert has a day off on Tue 2
-- Richard requests not to work shift D on Tue 2
-- Shift D on Tue 2 must be covered by 7 nurses out of 8
-Step-wise explanations, each step is an O(C)US
-OUS: Optimal Unsatisfiable Subsets (Gamba, Bogaerts, Guns, 2021). Every constraint has a weight.
-
-=> how to determine the weights?
-
-Can we learn them from the user?
-        Preference Elicitation for Step-Wise Explanations in Logic Puzzles
-                                                          [Dragone, Teso and Passerini, 2018]
-
-
-
-
-                                                                  + smart ‘fact to explain’ generation
-                                                                  + UCB-style weighting
-                                                                  + subobjective normalisation
-                                                                  + non-domination criteria
-Explanation generation as Multi-Objective optimisation!
-                                                              [Foschini, Defresne, Gamba, Bogaerts, Guns. AAAI 2026, best poster award]
-Recap: deductive explanations for UNSAT
-Algorithm        Characteristics         First solver call   Subsequent calls   Efficiency
-Deletion-based   Trivial to implement,   All constraints                        Efficient for assumption-
-                                                             Linear decrease
-MUS              arbitrary MUS           except one                             based incremental solvers.
-
-
-                 Requires a solver
-Prooflog         supporting                                                     Prooflogging has some
-trimming +       prooflogging            All constraints     /                  overhead, and prooflogs can
-MUS              No assumption                                                  be long.
-                 variables needed!
-
-
-                 Optional lexicographic
-                                        Half the             Divide and         Reasonably efficient for non-
-QuickXplain      preference over
-                                        constraints (n/2)    conquer            incremental solvers.
-                 constraints.
-                 Guaranteed
-                 smallest/optimal US.                                           Only calls solver with small
-sMUS/OUS                                 One constraint      Slow increase
-                 One weight per                                                 subsets of constraints.
-                 constraint.
-Outline of the lectures
-
-Introduction to XCP
-Deductive explanations for UNSAT
-
- Break
-
-
-Deductive explanations for SAT/OPT
-Counterfactual explanations for UNSAT/SAT/OPT
-Outlook and challenges
-Outline of the lectures
-
-Introduction to XCP
-Deductive explanations for UNSAT
-
-Break
-
-
- Deductive explanations for SAT/OPT
-
-Counterfactual explanations for UNSAT/SAT/OPT
-Outlook and challenges
-Deductive Explanations for SAT problems
-Deductive Explanations for SAT problems
-Deductive Explanations for SAT problems
-Explaining logical consequences
-
-
-Logical consequence: a variable assignment entailed by the constraints and the current partial
-assignment
-
-One step (user-level variables and constraints only):
-   partial assignment & subset of constraints => domain change
-
-Maximal consequence: precision- maximal partial assignment
-• Maximal consequence = intersection of all possible solutions
-• If solution is unique, maximal consequence = unique solution
-                                                                       Does not require iterating over
-                                                                       all solutions!
- all constraints => shared domain changes across all solutions         Iteratively ‘block’ shared part only
-Deductive Explanations for SAT problems
-Bogaerts, Bart, Emilio Gamba, and Tias Guns. "A framework for step-wise explaining how to solve
-constraint satisfaction problems." Artificial Intelligence 300 (2021): 103550.
-
-
-
-
-                                                                           Sudoku has a unique solution
-                                                                           = maximal consequence
-Deductive Explanations for SAT problems
-Bogaerts, Bart, Emilio Gamba, and Tias Guns. "A framework for step-wise explaining how to solve
-constraint satisfaction problems." Artificial Intelligence 300 (2021): 103550.
-Deductive Explanations for SAT problems
-
-
-
-
-We want each explanation
-step to be as simple as possible.
-We use OUS because we want the smallest not just a minimal one, and then we can put smaller
-weights on facts and larger weights on constraints.
-Efficiently step-wise explanation of the maximal consequence?
-Compute the OUS over all assignments in the maximal consequence at once, efficiently:
-
-OCUS Optimal Constrained Unsatisfiable Subsets (Gamba, Bogaerts, Guns, 2021).
-• meta-constraint p: use exactly 1 element of the maximal consequence
-
-                                    Optimal Constrained
-                      Hitting Set   Hitting Set
-      W,
-  constraint p          Solver                            Subset
-                     (incomplete                          Solver
-                    set of MCSs)
-                                       New MCS
-                                                     SAT:
-                                                  Grow MSS    UNSAT: Optimal Constrained
-                                                                     Unsatisfiable Subset
-
-(not discussed in more detail)
-Deductive Explanations for OPT problems
-Deductive Explanations for OPT problems
-Why is there no even better solution?
-
-
-What constraints causes that there is no better solution?
-• Reduce to UNSAT problem:
-• Add better-than-optimal objective value as constraint: C ∧ (f(x) < o) ⊨ ⊥
-• Then use deductive explanations for UNSAT!
-Deductive Explanations for OPT problems
-Can we explain why an optimal solution is optimal, e.g. why there does not exist a better solution?
-
-The MUS will typically be very large, upto all constraints…
-
-Step-wise explanations for UNSAT to the rescue!
-
-
-A proof of optimality proves that no better solution exists:
-• An increasing number of solvers support proof logging
-   (SAT, but also CP: Glasgow Constraint Solver, Pumpkin)
-• These proofs are built for computer verification (up to gigabytes of log), not to communicate to
-  users; so need trimming and projection on user constraints.
-An example - jobshop
-
-
-
-
-0   3        6     9      12      16
-
-
-
-
-        “Why is there no solution with a shorter makespan?”
-An example - jobshop
-
-
-
-0   3    6   9   12    16
-An example - jobshop
-
-
-
-0   3    6   9   12    16
-An example - jobshop
-
-
-
-0   3    6   9   12    16
-“What about problems with search?”
-                           Peter Stuckey at the PhD defence of Ignace Bleukx
-
-
-
-                 Step-wise explanations derive
-                 domain reduction using set of
-                 constraints
-
-                 Sometimes need lots of constraints
-                 to derive domain reduction
-
-                 Bad interpretability for large CSPs…
-[Bleukx, Stuckey, Guns. CP 2026]
-
-
-   Generate step-wise explanations to explain why large-scale
-   CSPs are UNSAT
-
-   Enabling us to compute nested explanations until at most 1
-   (global) constraint per step
-
-   Experimental evaluation and comparison to proof-size
-  Solution: nested explanations [1]
-
-Step 1
-
-
-Step 2
-
-
-Step 3
-
-
-Step 4
-
-
-
-
-[1] Bogaerts, Bart, Emilio Gamba, and Tias Guns. "A framework for step-wise explaining how to solve constraint satisfaction problems." Artificial
-  Solution: nested explanations [1]
-
-Step 1
-
-
-Step 2
-
-
-Step 3
-                                Step 3.1
-Step 4                          Step 3.2
-                                Step 3.3
-
-
-
-
-[1] Bogaerts, Bart, Emilio Gamba, and Tias Guns. "A framework for step-wise explaining how to solve constraint satisfaction problems." Artificial
-An example - jobshop
-
-
-
-0   3    6   9   12    16
-                            Dom(Ai) = Dom(Bi) = Dom(Ci) = {0..30}
-Example - nested   0   3   6   9   12   16
-Example - nested   0   3   6   9   12   16
-Example - nested   0   3   6   9   12   16
-Example - nested   0   3   6   9   12   16
-Outline of the lectures
-
-Introduction to XCP
-Deductive explanations for UNSAT
-
-Break
-
-
-
-Deductive explanations for SAT/OPT
- Counterfactual explanations for UNSAT/SAT/OPT
-
-Outlook and challenges
-Explainable Constraint Programming (XCP)
-Recap, "Why X?"      (with X a solution or UNSAT)
-
-Deductive explanation:
-• What constraints cause X?
-• answer: a minimal inference set
-
-Counterfactual explanation:
-• What to change if I want Y instead of X?
-• answer: a constraint relaxation + new solution
-Counterfactual explanations to UNSAT problems
-
-Resolving conflicts: "What to change if I want a solution instead of UNSAT?"
-
-First idea: iteratively resolve each conflict
-Diagnosis: interactively computing and resolving conflicts
-Reiter, Raymond. "A theory of diagnosis from first principles." Artificial intelligence 32.1 (1987): 57-
-95.
-Interactive conflict resolution
-Counterfactual explanation of an UNSAT problem
-              How to change the model, in order to find a solution?
-
-              Previous approach may require many iterations…
-
-              AND user only has local information, global resolution may be sub-optimal
-              Instead, directly find subset of soft constraints to remove
-
-              This is textbook Max-CSP solving!
-Max-CSP solving
-maximize ∑ w_i · b_i
-st. b_i ⇒ c_i
-
-
-
-
-Found optimal solution with 356 out of 360 constraints
-
-
-Finds the maximum (cardinality) satisfiable subset
-Removed these constraints:
-- Robert has a day off on Tue 2
-- Richard requests not to work shift D on Tue 2
-- Shift D on Sat 1 must be covered by 5 nurses out of 8
-- Shift D on Sun 1 must be covered by 5 nurses out of 8
-Resulting solution:
-Max-CSP solving
-
-
-Finds a maximum (cardinality) satisfiable subset
-BUT may be hard to compute (e.g., stuck proving optimality)
-
-
-
-Instead, find non-optimal, but maximal (superset) satisfiable subset, fast
-
-
-                      We’ve seen this already! (‘grow’ in Marco):
-                      • Start from the empty (satisfiable) set
-                      • Grow the satisable subset by adding one constraint at a time
-                      • Each constraint that causes UNSAT is in the MCS
-Grow-based MCS
-
-
-
-
-By removing these constraints, the model becomes SAT:
-- Shift D on Sun 1 must be covered by 5 nurses out of 8
-- Shift D on Sat 1 must be covered by 5 nurses out of 8
-- Richard requests not to work shift D on Tue 2
-- Robert has a day off on Tue 2
-
-
-
-
-                                                          (on this example,
-                                                          it finds the same one)
-Influencing which MCS is found?
-• Lexicographic order over constraints: FastDiag is the MCS counterpart of QuickXplain
-A. Felfernig, M. Schubert, and C. Zehentner. An efficient diagnosis algorithm for inconsistent
-constraint sets. AI EDAM, 26(1):53–62, 2012.
-Counterfactual explanation of an UNSAT problem, alternative
-A minimal correction subset corrects an unsatisfiable problem by dropping constraints.
-
-If each constraint is a clause, that is probably the best you can do...
-For rich applications, like nurse rostering, there is often a softer degree of violation
-Counterfactual explanation of an UNSAT problem
-
-Finding a ‘correction set’ requires defining corrective actions, e.g. constraint violations that allows
-for relaxations of constraints.
-E.g. feasbility restoration by modifying rather then removing constraints
-
-
-Senthooran I, Klapperstueck M, Belov G, Czauderna T, Leo K, Wallace M, Wybrow M, Garcia de la
-Banda M. Human-centred feasibility restoration in practice. Constraints. 2023 Jul 20:1-41.
-Types of relaxations of constraints:
-
-• Boolean constraints: can only be turned on/off
-• Numerical constraints: can be violated to some extend
- 
-     Introduce slack for each numerical constraint
- 
-     Slack indicates how much a constraint may be violated
-     
-         = fine grained penalty of solution
-  • Minimize (weighted) aggregate of slack values
-Running example, nurse rostering
-Slack-based relaxations
-E.g., allow violation of cover constraints (nr of nurses on a specific day)
---> Allow days to be slightly under/overstaffed, minimize total violation
-Running example, nurse rostering
-Slack-based relaxations
-Minimize nb of non-zero slacks constraints (similar to the MAX-CSP approach)
-Running example, nurse rostering
-Slack-based relaxations
-Or minimize any combination
-Recap: counterfactual explanations for UNSAT
-MCS = Minimal Correction Subset
-
-Algorithm                  Characteristics        First solver call      Subsequent calls     Efficiency
-                           Trivial to
-                                                                                              Efficient for assumption-based
-Grow-based MCS             implement,             One constraint         Linear increase
-                                                                                              incremental solvers.
-                           arbitrary MCS
-                           Optional
-                           lexicographic          Half the constraints                        Reasonably efficient for non-
-FastDiag                                                                 Divide and conquer
-                           preference over        (n/2)                                       incremental solvers.
-                           constraints.
-                           Optimal, e.g.
-                                                                                              Reified formulation can be more
-Max-CSP                    weight per             Reified constraints    /
-                                                                                              difficult to solve
-                           constraint
-                           Optimal, define
-                           slack-based                                                        Adding slack decision variables
-Slack-based COP                                   Relaxed constraints    /
-                           relaxation for every                                               can be more difficult to solve
-                           constraint
-Counterfactual Explanations for SAT problems
-The problem is SATisfiable, and the solver returned a solution.
-The user asks: "What if Y instead of X?"
-Y is a foil: a partial assignment or constraint that is counter-factual, different from the returned
-solution.
-
-Need to check C + Y, with C the set of constraints and Y the foil
-• If C + Y is also SAT: show this solution
-• If C + Y is UNSAT: can show a deductive or counterfactual explanation of why the foil leads to
-  UNSAT
-Counterfactual Explanations for SAT problems
-Example where the user asks: "What if Y instead of X?"
-
-
-
-
-Total penalty: 41.2 versus 40.2 before.
-Counterfactual Explanations for OPT problems
-• Corrective actions over the constraints? C ~∧ ~(f(x) < o) is UNSAT
-  
-    => get counterfactual explanations from that.
-
-
-• Corrective actions over the objective function coefficients:
-
-The user asks: "What coefficients need to change so that Y becomes an optimal solution instead of
-X?"
-
-Y is a foil from the optimisation perspective: it leads to a non-optimal solution.
-
-[Korikov, Anton, and J. Christopher Beck. "Counterfactual explanations via inverse constraint
-programming." In 27th International Conference on Principles and Practice of Constraint
-Programming (CP 2021).]
-Counterfactual Explanations for OPT problems
-Find currently optimal solution X:
-
-
-
-
-Total penalty: 607
-Counterfactual Explanations for OPT problems
-Robert is unhappy!
-
-
-
-
-False        w:1         Robert's requests to work shift D on Mon 1 is denied
-False        w:1         Robert's requests to work shift D on Tue 1 is denied
-False        w:1         Robert's requests to work shift D on Wed 1 is denied
-True         w:1         Robert's requests to work shift D on Thu 1 is denied
-True         w:1         Robert's requests to work shift D on Fri 1 is denied
-False        w:1         Robert's requests to not work shift D on Sat 2 is denied
-False w:1    Robert's requests to not work shift D on Sun 2 is denied
-
-
-
-
-True   w:1   Robert's requests to work shift D on Fri 1 is denied
-Counterfactual Explanations for OPT problems
-Robert's request to work on Fri 1 is very important! His daughter has a surgery that day.
-How should he minimally change his preferences to work that day?
-
-
-
-
-Foil: {not([roster[2,4] == 1]): False}
-
-Robert's other preferences:
-- Weight 1 : Robert's requests to work shift D on Mon 1 is denied
-- Weight 1 : Robert's requests to work shift D on Tue 1 is denied
-- Weight 1 : Robert's requests to work shift D on Wed 1 is denied
-- Weight 1 : Robert's requests to work shift D on Thu 1 is denied
-- Weight 1 : Robert's requests to not work shift D on Sat 2 is denied
-- Weight 1 : Robert's requests to not work shift D on Sun 2 is denied
-Counterfactual Explanations for OPT problems
-[Korikov, Anton, and J. Christopher Beck. "Counterfactual explanations via inverse constraint
-programming." In 27th International Conference on Principles and Practice of Constraint
-Programming (CP 2021).]
-
-
-
-
-Algorithmically, it is a beautiful inverse optimisation problem with a multi-solver main/subproblem
-algorithm
-
-Done! Found solution with total penalty 607, was 607
-
-Robert should change the following preferences:
-- set to weight: 0 -- Robert's requests to not work shift D on Sat 2 is denied
-Outline of the lectures
-
-Introduction to XCP
-Deductive explanations for UNSAT
-
-Break
-
-
-
-Deductive explanations for SAT/OPT
-Counterfactual explanations for UNSAT/SAT/OPT
- Use case, challenges and conclusion
-Use Case: Airbus Workforce Allocation example
-Airbus Workforce Allocation example, solving
-Airbus Workforce Allocation example, reviewing
-Explainable Constraint Programming (XCP)
-Recurring challenges:
-• Definition of explanation: question and answer format
-
-
-• Computational efficiency, incremental solvers
-
-
-• Explanation selection: which explanation to show; learn preferences?
-• User Interaction? (visualisation, conversational, stateful, …)
-
-
-• Explanation evaluation: computational, formal, user survey, user study, …
- "Towards a Comprehensive Human-Centred Evaluation Framework for Explainable AI,
- XAI conference 2023"
-Connections to wider XAI
-"Someone explains something to someone"
-
-• Explanations in planning, e.g. MUGS [Eiflet et al], Model Reconciliation [Chakraborti et al], ...
-
-• Explanations for KR/justifications [Swartout et al], ASP [Fandinno et al], in OWL [Kalyanpur et al], ...
-
-• Formal explanations of ML models (e.g. impl. hitting-set based, [Ignatiev et al])
-Conclusion (final slide)
-• Deductive and Constrastive Explanation of UNSAT/SAT/Opt
-• Deductive explanations relate back to finding a MUS/OUS
-• XCP requires programmable (multi-solver) tooling (here: CPMpy)
-
-
-• CP great fit for user-oriented explanations (high-level languages)
-• More and more incremental and prooflogging CP solvers...
-• Less developed: counterfactual and interactive methods
-• Even less developed: the role LLM’s can play in this
-
-
-• Many open challenges and new problems!
-Want to learn more?
-Tutorial with notebooks available at
-
-https://github.com/CPMpy/XCP-explain
-References mentioned (many more exist!!!)
-
-MUS
-• Liffiton, M. H., & Sakallah, K. A. (2008). Algorithms for computing minimal unsatisfiable subsets of constraints. Journal of Automated
-  Reasoning, 40, 1-33.
-• Ignatiev, A., Previti, A., Liffiton, M., & Marques-Silva, J. (2015, August). Smallest MUS extraction with minimal hitting set dualization. In
-  International Conference on Principles and Practice of Constraint Programming (pp. 173-182). Cham: Springer International Publishing.
-• Joao Marques-Silva. Minimal Unsatisfiability: Models, Algorithms and Applications. ISMVL 2010. pp. 9-14
-
-
-
-Feasibility restoration
-• Senthooran, I., Klapperstueck, M., Belov, G., Czauderna, T., Leo, K., Wallace, M., ... & De La Banda, M. G. (2021). Human-centred feasibility
-  restoration. In 27th International Conference on Principles and Practice of Constraint Programming (CP 2021). Schloss Dagstuhl-Leibniz-
-  Zentrum für Informatik.
-
-Explaining optimization problems
-• Korikov, A., & Beck, J. C. (2021). Counterfactual explanations via inverse constraint programming. In 27th International Conference on
-  Principles and Practice of Constraint Programming (CP 2021). Schloss Dagstuhl-Leibniz-Zentrum für Informatik.
-
-Explanation in planning, ASP, KR
-• Eifler, Rebecca, Michael Cashmore, Jörg Hoffmann, Daniele Magazzeni, and Marcel Steinmetz. "A new approach to plan-space explanation:
-  Analyzing plan-property dependencies in oversubscription planning." In Proceedings of the AAAI Conference on Artificial Intelligence, vol.
-  34, no. 06, pp. 9818-9826. 2020.
-• Chakraborti, Tathagata, Sarath Sreedharan, Yu Zhang, and Subbarao Kambhampati. "Plan explanations as model reconciliation: moving
-  beyond explanation as soliloquy." In Proceedings of the 26th International Joint Conference on Artificial Intelligence, pp. 156-163. 2017.
-
