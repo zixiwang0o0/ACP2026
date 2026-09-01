@@ -16,11 +16,17 @@ def run(command: list[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Solve every airport instance.")
+    parser.add_argument("--instance", help="Two-digit instance suffix, e.g. 01")
     parser.add_argument("--seconds", type=int, default=300)
     parser.add_argument("--workers", type=int, default=8)
     args = parser.parse_args()
 
-    for data in sorted((ROOT / "data").glob("hackathon_*.json")):
+    pattern = f"hackathon_{args.instance}.json" if args.instance else "hackathon_*.json"
+    data_files = sorted((ROOT / "data").glob(pattern))
+    if not data_files:
+        parser.error(f"no data file matches {pattern}")
+
+    for data in data_files:
         suffix = data.stem.rsplit("_", 1)[-1]
         tier1 = ROOT / "solutions" / "tier1" / f"sol_{suffix}.json"
         tier2 = ROOT / "solutions" / "tier2" / f"sol_{suffix}.json"

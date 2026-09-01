@@ -9,7 +9,7 @@ Run all commands below from the repository root. The workflow is:
 
 The techniques are summarized in `Presentation/Avalon Airpot Team.pdf`.
 
-### Run everything with Docker
+## Run everything with Docker
 
 Build the image, then solve all instances. Results are written to `solutions`.
 
@@ -26,6 +26,8 @@ You can also use docker to run these code. Locate the Docker section.
 python -m pip install ortools
 minizinc --version
 ```
+
+## Command Line
 
 ### Tier 1 solution
 
