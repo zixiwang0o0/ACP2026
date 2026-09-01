@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 from ortools.sat.python import cp_model
-from scr.tier3_cpsat import REQUIRED_PREDS, REQUIRED_TEAM, load_json
+from tier3_cpsat import REQUIRED_PREDS, REQUIRED_TEAM, load_json
 
 
 def solve(data: dict, seed: dict, seconds: float, workers: int) -> dict:

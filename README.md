@@ -1,48 +1,97 @@
 ## Guidance
 
-This file aims to explain you how to use these script to find a solution of the scheduling problem. Following is the workflow:
+Run all commands below from the repository root. The workflow is:
 
-1. use MiniZinc to find the tier1 solution.
-2. use `tier2_cpsat.py` to find the tier2 solution.
-3. use `tier3_cpsat.py` to find the tier3 solution.
-4. use `tier3_cpsat.py` to optimize the tier3 solution.
+1. Use MiniZinc to obtain a valid gate-assignment seed.
+2. Use `scr/tier2_cpsat.py` to solve C1-C10.
+3. Use `scr/tier3_cpsat.py` with the Tier 2 solution as a warm start to solve C1-C12.
+4. Use the same Tier 3 script with LNS to reduce labor cost.
 
-The section below contains the command line we used. As for the techniques we used, a good reference is `Presentation\Avalon Airpot Team.pdf`.
+The techniques are summarized in `Presentation/Avalon Airpot Team.pdf`.
 
-### tier1 solution
+### Run everything with Docker
 
+Build the image, then solve all instances. Results are written to `solutions`.
+
+```powershell
+docker build -t airport-solver .
+docker run --rm -v "${PWD}/solutions:/app/solutions" airport-solver
 ```
 
-```
-### tier2 solution
+You can also use docker to run these code. Locate the Docker section.
 
+### Requirements
+
+```powershell
+python -m pip install ortools
+minizinc --version
 ```
 
+### Tier 1 solution
+
+The current MiniZinc model has Tier 3 disabled and also enforces C6-C10, so its
+output is at least a valid Tier 1 seed and may already satisfy Tier 2.
+
+```powershell
+minizinc `
+  --solver gecode `
+  --time-limit 300000 `
+  --soln-sep " " `
+  --search-complete-msg " " `
+  --output-to-file .\solutions\tier1\sol_01.json `
+  .\scr\airport_sched.mzn `
+  .\data\hackathon_01.json
 ```
 
-### tier3 solution
+### Tier 2 solution
 
+The second input is the Tier 1 seed. Its gate assignment is fixed while CP-SAT
+solves the task times and labor assignment.
+
+```powershell
+python .\scr\tier2_cpsat.py `
+  .\data\hackathon_01.json `
+  .\solutions\tier1\sol_01.json `
+  .\solutions\tier2\sol_01.json `
+  --seconds 300 `
+  --workers 8
 ```
-python .\tier3_cpsat.py `
-  .\data\hackathon_08.json `
-  .\solutions\tier2\sol_06.json `
-  .\solutions\tier3\sol_06.json `
+
+### Tier 3 solution
+
+Tier 2 task times and labor assignments are supplied as CP-SAT hints. Gates
+remain fixed. `--adaptive` expands sparse successor neighborhoods 16 -> 32 -> 64.
+
+```powershell
+python .\scr\tier3_cpsat.py `
+  .\data\hackathon_01.json `
+  .\solutions\tier2\sol_01.json `
+  .\solutions\tier3\sol_01.json `
   --seconds 300 `
   --workers 8 `
   --max-successors 16 `
   --adaptive
-  ```
-
-### optimize tier3 solution
-
 ```
-python .\tier3_cpsat.py `
-  .\data\hackathon_06.json `
-  .\solutions\tier3\sol_06.json `
-  .\tmp\sol_08_lns70.json `
+
+### Optimize an existing Tier 3 solution with LNS
+
+`--fix-fraction 0.7` fixes 70% of incumbent tasks and releases 30% of tasks
+using high-cost labor. Write to `tmp` first so the incumbent is preserved.
+
+```powershell
+New-Item -ItemType Directory -Force .\tmp | Out-Null
+
+python .\scr\tier3_cpsat.py `
+  .\data\hackathon_01.json `
+  .\solutions\tier3\sol_01.json `
+  .\tmp\sol_01_lns70.json `
   --seconds 300 `
   --workers 8 `
   --max-successors 16 `
   --optimize `
   --fix-fraction 0.7
 ```
+
+Only replace `solutions/tier3/sol_01.json` after confirming that the candidate
+has a lower `cost`. Change every two-digit instance suffix consistently when
+running another data file.

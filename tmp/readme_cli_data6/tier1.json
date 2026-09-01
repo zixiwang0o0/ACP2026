@@ -1,0 +1,7 @@
+{
+  "gate":       ["G000", "G001", "G002", "G003"],
+  "task_start": [[194, 196, 196, 203, 203, 203, 203, 207, 219, 236], [220, 222, 222, 231, 231, 231, 231, 239, 246, 263], [142, 145, 145, 155, 155, 155, 155, 157, 169, 182], [201, 203, 203, 212, 212, 212, 212, 215, 229, 245]],
+  "task_labor": [["ramp_team_06", "ramp_team_06", "baggage_team_08", "fuel_team_05", "cabin_clean_team_05", "water_waste_team_04", "catering_team_05", "baggage_team_08", "ramp_team_06", "pushback_team_04"], ["ramp_team_09", "ramp_team_09", "baggage_team_08", "fuel_team_05", "cabin_clean_team_05", "water_waste_team_04", "catering_team_05", "baggage_team_08", "ramp_team_06", "pushback_team_04"], ["ramp_team_06", "ramp_team_06", "baggage_team_08", "fuel_team_05", "cabin_clean_team_05", "water_waste_team_04", "catering_team_05", "baggage_team_08", "ramp_team_06", "pushback_team_04"], ["ramp_team_09", "ramp_team_06", "baggage_team_13", "fuel_team_08", "cabin_clean_team_08", "water_waste_team_04", "catering_team_08", "baggage_team_13", "ramp_team_10", "pushback_team_04"]],
+  "cost":       3268
+}
+ 
